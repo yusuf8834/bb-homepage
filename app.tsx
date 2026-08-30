@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import * as ContextMenu from "@radix-ui/react-context-menu";
 import {
   definePluginApp,
   experimental_useSidebarThreadActions,
@@ -348,73 +349,98 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
       isCurrent ? "border-ring bg-state-hover" : "border-border",
     ].join(" ");
 
+    const menuItemClassName =
+      "flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-foreground outline-none data-[highlighted]:bg-state-hover";
+
     return (
-      <div key={project.id} className="group relative">
-        <button
-          type="button"
-          className={className}
-          aria-label={`Start a new chat in ${project.name}`}
-          aria-current={isCurrent ? "page" : undefined}
-          onClick={() =>
-            actions.openNewThread({ projectId: project.id, focusPrompt: true })
-          }
-        >
-          <ProjectIcon
-            projectId={project.id}
-            isPersonal={project.isPersonal}
-            loadArtwork={settings.loadProjectIcons}
-          />
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-sm font-medium text-foreground">
-              {project.name}
-            </span>
-            {settings.showChatCounts ? (
-              <span className="block truncate text-xs text-muted-foreground">
-                {project.chatCount === 0
-                  ? "No chats yet"
-                  : `${project.chatCount} chat${project.chatCount === 1 ? "" : "s"} · ${formatRelativeTime(project.lastUsedAt, now)}`}
-              </span>
-            ) : null}
-          </span>
-          <NewChatSparkline projectName={project.name} activity={activity} />
-          <span
-            aria-hidden="true"
-            className="flex size-6 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors group-hover:border-primary group-hover:text-primary"
-          >
-            <svg viewBox="0 0 16 16" fill="none" className="size-3.5">
-              <path
-                d="M8 3.25v9.5M3.25 8h9.5"
-                stroke="currentColor"
-                strokeWidth="1.6"
-                strokeLinecap="round"
+      <ContextMenu.Root key={project.id}>
+        <ContextMenu.Trigger asChild>
+          <div className="group relative">
+            <button
+              type="button"
+              className={className}
+              aria-label={`Start a new chat in ${project.name}`}
+              aria-current={isCurrent ? "page" : undefined}
+              onClick={() =>
+                actions.openNewThread({ projectId: project.id, focusPrompt: true })
+              }
+            >
+              <ProjectIcon
+                projectId={project.id}
+                isPersonal={project.isPersonal}
+                loadArtwork={settings.loadProjectIcons}
               />
-            </svg>
-          </span>
-        </button>
-        <button
-          type="button"
-          aria-label={isPinned ? `Unpin ${project.name}` : `Pin ${project.name}`}
-          aria-pressed={isPinned}
-          className={[
-            "absolute right-1.5 top-1.5 z-10 flex size-6 items-center justify-center rounded-md text-muted-foreground transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-            isPinned ? "opacity-100" : "opacity-0 group-hover:opacity-100",
-          ].join(" ")}
-          onClick={() => togglePin(project.id, !isPinned)}
-        >
-          <svg
-            viewBox="0 0 16 16"
-            fill={isPinned ? "currentColor" : "none"}
-            className="size-3.5"
-          >
-            <path
-              d="M4.75 3.25h6.5v9.4a.25.25 0 0 1-.4.2L8 10.55l-2.85 2.3a.25.25 0 0 1-.4-.2z"
-              stroke="currentColor"
-              strokeWidth="1.3"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
-      </div>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium text-foreground">
+                  {project.name}
+                </span>
+                {settings.showChatCounts ? (
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {project.chatCount === 0
+                      ? "No chats yet"
+                      : `${project.chatCount} chat${project.chatCount === 1 ? "" : "s"} · ${formatRelativeTime(project.lastUsedAt, now)}`}
+                  </span>
+                ) : null}
+              </span>
+              <NewChatSparkline projectName={project.name} activity={activity} />
+              <span
+                aria-hidden="true"
+                className="flex size-6 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors group-hover:border-primary group-hover:text-primary"
+              >
+                <svg viewBox="0 0 16 16" fill="none" className="size-3.5">
+                  <path
+                    d="M8 3.25v9.5M3.25 8h9.5"
+                    stroke="currentColor"
+                    strokeWidth="1.6"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </span>
+            </button>
+            <button
+              type="button"
+              aria-label={isPinned ? `Unpin ${project.name}` : `Pin ${project.name}`}
+              aria-pressed={isPinned}
+              className={[
+                "absolute right-1.5 top-1.5 z-10 flex size-6 items-center justify-center rounded-md text-muted-foreground transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                isPinned ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+              ].join(" ")}
+              onClick={() => togglePin(project.id, !isPinned)}
+            >
+              <svg
+                viewBox="0 0 16 16"
+                fill={isPinned ? "currentColor" : "none"}
+                className="size-3.5"
+              >
+                <path
+                  d="M4.75 3.25h6.5v9.4a.25.25 0 0 1-.4.2L8 10.55l-2.85 2.3a.25.25 0 0 1-.4-.2z"
+                  stroke="currentColor"
+                  strokeWidth="1.3"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          </div>
+        </ContextMenu.Trigger>
+        <ContextMenu.Portal>
+          <ContextMenu.Content className="z-50 min-w-[10rem] rounded-md border border-border bg-card p-1 shadow-md">
+            <ContextMenu.Item
+              className={menuItemClassName}
+              onSelect={() =>
+                actions.openNewThread({ projectId: project.id, focusPrompt: true })
+              }
+            >
+              New chat
+            </ContextMenu.Item>
+            <ContextMenu.Item
+              className={menuItemClassName}
+              onSelect={() => togglePin(project.id, !isPinned)}
+            >
+              {isPinned ? "Unpin" : "Pin"}
+            </ContextMenu.Item>
+          </ContextMenu.Content>
+        </ContextMenu.Portal>
+      </ContextMenu.Root>
     );
   }
 

@@ -50,6 +50,17 @@ afterEach(() => {
   window.localStorage.clear();
 });
 
+// jsdom lacks the layout APIs Radix menus rely on.
+window.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+};
+Element.prototype.hasPointerCapture ??= () => false;
+Element.prototype.setPointerCapture ??= () => {};
+Element.prototype.releasePointerCapture ??= () => {};
+Element.prototype.scrollIntoView ??= () => {};
+
 describe("project chat launcher", () => {
   it("hides the main-page recent chats section and cleans up on disposal", async () => {
     const recents = document.createElement("section");
@@ -181,6 +192,30 @@ describe("project chat launcher", () => {
       method: "setProjectPinned",
       input: { projectId: "beta", pinned: false },
     });
+
+    slot.lifecycle.unmount();
+  });
+
+  it("wires a context menu trigger onto each project card", async () => {
+    const app = await loadPluginApp(() => import("./app"));
+    const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {
+      rpc: {
+        listPinnedProjects: () => ({ projectIds: [] }),
+        setProjectPinned: () => ({ projectIds: ["solo"] }),
+      },
+      sidebarThreads: {
+        projects: [{ id: "solo", name: "Solo", isPersonal: false }],
+        threads: [],
+      },
+    });
+
+    // Radix marks closed context-menu triggers with data-state; opening the
+    // menu itself deadlocks under jsdom, so the open path is verified live.
+    const trigger = slot.container.querySelector('[data-state="closed"]');
+    expect(trigger).not.toBeNull();
+    expect(
+      trigger?.querySelector('[aria-label="Start a new chat in Solo"]'),
+    ).not.toBeNull();
 
     slot.lifecycle.unmount();
   });
