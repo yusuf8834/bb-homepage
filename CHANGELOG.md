@@ -9,6 +9,7 @@ All notable changes to this project are documented here.
   project ordering, persisted in the current browser.
 - Add settings for current-project priority, chat counts, unused projects,
   Personal, and project artwork.
+- Show a relative last-activity time next to each project's chat count.
 - Discover project branding and common icon files with bounded positive and
   negative caching.
 - Validate SVG artwork as inert XML and reject unsafe paths, markup, and

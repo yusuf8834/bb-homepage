@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   definePluginApp,
   experimental_useSidebarThreadActions,
@@ -11,6 +11,7 @@ import type {
   PluginSidebarThread,
 } from "@get-bb/plugin-sdk/app";
 import { buildNewChatActivityByProject } from "./activity.js";
+import { formatRelativeTime } from "./relative-time.js";
 import {
   parseHomepageSettings,
   parseRankingMode,
@@ -232,6 +233,11 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
     () => buildNewChatActivityByProject(threads),
     [threads],
   );
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   if (status === "loading") {
     return (
@@ -319,10 +325,10 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
                   {project.name}
                 </span>
                 {settings.showChatCounts ? (
-                  <span className="block text-xs text-muted-foreground">
+                  <span className="block truncate text-xs text-muted-foreground">
                     {project.chatCount === 0
                       ? "No chats yet"
-                      : `${project.chatCount} chat${project.chatCount === 1 ? "" : "s"}`}
+                      : `${project.chatCount} chat${project.chatCount === 1 ? "" : "s"} · ${formatRelativeTime(project.lastUsedAt, now)}`}
                   </span>
                 ) : null}
               </span>

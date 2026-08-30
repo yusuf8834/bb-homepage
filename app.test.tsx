@@ -8,6 +8,7 @@ import {
   renderSlot,
 } from "@get-bb/plugin-sdk/testing/app";
 import { buildNewChatActivity } from "./activity.js";
+import { formatRelativeTime } from "./relative-time.js";
 
 function thread(id: string, projectId: string, updatedAt: number) {
   return {
@@ -65,6 +66,20 @@ describe("project chat launcher", () => {
     expect(style?.isConnected).toBe(false);
   });
 
+  it("formats last-activity timestamps compactly", () => {
+    const now = new Date(2026, 7, 30, 12).getTime();
+    expect(formatRelativeTime(now - 20_000, now)).toBe("just now");
+    expect(formatRelativeTime(now - 5 * 60_000, now)).toBe("5m ago");
+    expect(formatRelativeTime(now - 3 * 3_600_000, now)).toBe("3h ago");
+    expect(formatRelativeTime(now - 6 * 86_400_000, now)).toBe("6d ago");
+    expect(formatRelativeTime(now - 90 * 86_400_000, now)).toBe(
+      new Date(now - 90 * 86_400_000).toLocaleDateString(undefined, {
+        month: "short",
+        year: "numeric",
+      }),
+    );
+  });
+
   it("builds a 14-day series from new root chats", () => {
     const now = new Date(2026, 7, 30, 12).getTime();
     const oneDayAgo = new Date(2026, 7, 29, 9).getTime();
@@ -103,9 +118,13 @@ describe("project chat launcher", () => {
       },
     });
 
+    const epochMonth = new Date(30).toLocaleDateString(undefined, {
+      month: "short",
+      year: "numeric",
+    });
     expect(slot.getAllByRole("button").map((button) => button.textContent)).toEqual([
-      "Often2 chats",
-      "Once1 chat",
+      `Often2 chats · ${epochMonth}`,
+      `Once1 chat · ${epochMonth}`,
       "UnusedNo chats yet",
     ]);
     expect(slot.getByRole("button", { name: "Start a new chat in Often" }).getAttribute("aria-current"))
