@@ -10,6 +10,7 @@ import type {
   PluginSidebarProject,
   PluginSidebarThread,
 } from "@get-bb/plugin-sdk/app";
+import { buildNewChatActivity } from "./activity.js";
 import {
   parseHomepageSettings,
   parseRankingMode,
@@ -134,6 +135,59 @@ function ProjectIcon({
   );
 }
 
+function NewChatSparkline({
+  projectName,
+  activity,
+}: {
+  projectName: string;
+  activity: readonly number[];
+}) {
+  const width = 72;
+  const height = 24;
+  const baseline = height - 2;
+  const chartTop = 3;
+  const maximum = Math.max(1, ...activity);
+  const points = activity.map((count, index) => {
+    const x = activity.length === 1 ? width : (index / (activity.length - 1)) * width;
+    const y = baseline - (count / maximum) * (baseline - chartTop);
+    return { x, y };
+  });
+  const polyline = points.map(({ x, y }) => `${x},${y}`).join(" ");
+  const area = `M 0 ${baseline} L ${points.map(({ x, y }) => `${x} ${y}`).join(" L ")} L ${width} ${baseline} Z`;
+  const total = activity.reduce((sum, count) => sum + count, 0);
+  const label = `${projectName}: ${total} new chat${total === 1 ? "" : "s"} in the last 14 days`;
+  const latest = points.at(-1)!;
+  const chartClassName = total > 0
+    ? "h-6 w-[72px] overflow-visible text-primary/70 transition-colors group-hover:text-primary"
+    : "h-6 w-[72px] overflow-visible text-muted-foreground/25 transition-colors group-hover:text-muted-foreground/40";
+
+  return (
+    <span className="flex shrink-0 flex-col items-end gap-0.5" title={label}>
+      <svg
+        role="img"
+        aria-label={label}
+        viewBox={`0 0 ${width} ${height}`}
+        className={chartClassName}
+      >
+        <path d={area} fill="currentColor" fillOpacity="0.1" />
+        <polyline
+          points={polyline}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          vectorEffect="non-scaling-stroke"
+        />
+        {total > 0 ? <circle cx={latest.x} cy={latest.y} r="1.75" fill="currentColor" /> : null}
+      </svg>
+      <span aria-hidden="true" className="text-[10px] leading-none text-muted-foreground">
+        14d
+      </span>
+    </span>
+  );
+}
+
 function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
   const { status, projects, threads } = experimental_useSidebarThreads();
   const actions = experimental_useSidebarThreadActions();
@@ -208,6 +262,7 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {rankedProjects.map((project) => {
           const isCurrent = project.id === projectId;
+          const activity = buildNewChatActivity(threads, project.id);
           const className = [
             "group flex min-w-0 items-center gap-3 rounded-lg border bg-card px-4 py-3 text-left transition-colors hover:border-foreground/20 hover:bg-state-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
             isCurrent ? "border-ring bg-state-hover" : "border-border",
@@ -241,6 +296,7 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
                   </span>
                 ) : null}
               </span>
+              <NewChatSparkline projectName={project.name} activity={activity} />
               <span
                 aria-hidden="true"
                 className="text-muted-foreground group-hover:text-foreground"

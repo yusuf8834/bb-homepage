@@ -3,6 +3,7 @@
 import { fireEvent } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
+import { buildNewChatActivity } from "./activity.js";
 
 function thread(id: string, projectId: string, updatedAt: number) {
   return {
@@ -43,6 +44,25 @@ afterEach(() => {
 });
 
 describe("project chat launcher", () => {
+  it("builds a 14-day series from new root chats", () => {
+    const now = new Date(2026, 7, 30, 12).getTime();
+    const oneDayAgo = new Date(2026, 7, 29, 9).getTime();
+    const thirteenDaysAgo = new Date(2026, 7, 17, 18).getTime();
+    const outsideRange = new Date(2026, 7, 16, 23).getTime();
+
+    expect(buildNewChatActivity([
+      thread("today", "project-1", now),
+      thread("yesterday", "project-1", oneDayAgo),
+      { ...thread("archived", "project-1", oneDayAgo), isArchived: true },
+      { ...thread("child", "project-1", now), parentThreadId: "today" },
+      thread("old", "project-1", outsideRange),
+      thread("other-project", "project-2", now),
+      thread("first-day", "project-1", thirteenDaysAgo),
+    ], "project-1", now)).toEqual([
+      1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1,
+    ]);
+  });
+
   it("ranks active root chats by count and opens the selected project", async () => {
     const app = await loadPluginApp(() => import("./app"));
     const slot = renderSlot(app.homepageSections[0]!, { projectId: "project-2" }, {
@@ -63,13 +83,15 @@ describe("project chat launcher", () => {
     });
 
     expect(slot.getAllByRole("button").map((button) => button.textContent)).toEqual([
-      "Often2 chats+",
-      "Once1 chat+",
-      "UnusedNo chats yet+",
+      "Often2 chats14d+",
+      "Once1 chat14d+",
+      "UnusedNo chats yet14d+",
     ]);
     expect(slot.getByRole("button", { name: "Start a new chat in Often" }).getAttribute("aria-current"))
       .toBe("page");
     expect(slot.container.querySelectorAll('img[loading="lazy"]')).toHaveLength(3);
+    expect(slot.getAllByRole("img", { name: /new chats? in the last 14 days/ }))
+      .toHaveLength(3);
     expect(slot.container.querySelector("[data-homepage-sort]")?.className)
       .not.toContain("absolute");
 
@@ -139,11 +161,11 @@ describe("project chat launcher", () => {
     });
 
     expect(slot.getAllByRole("button").map((button) => button.textContent)).toEqual([
-      "Two+",
-      "One+",
+      "Two14d+",
+      "One14d+",
     ]);
     expect(slot.container.querySelectorAll("img")).toHaveLength(0);
-    expect(slot.container.querySelectorAll("svg")).toHaveLength(2);
+    expect(slot.container.querySelectorAll('svg[viewBox="0 0 24 24"]')).toHaveLength(2);
     slot.lifecycle.unmount();
   });
 
@@ -231,7 +253,7 @@ describe("project chat launcher", () => {
     expect(images[0]?.getAttribute("src")).toContain("projectId=work");
     fireEvent.error(images[0]!);
     expect(slot.container.querySelectorAll("img")).toHaveLength(0);
-    expect(slot.container.querySelectorAll("svg")).toHaveLength(2);
+    expect(slot.container.querySelectorAll('svg[viewBox="0 0 24 24"]')).toHaveLength(2);
 
     slot.lifecycle.unmount();
   });
