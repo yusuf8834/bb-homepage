@@ -135,6 +135,34 @@ function ProjectIcon({
   );
 }
 
+interface SparklinePoint {
+  x: number;
+  y: number;
+}
+
+function buildSmoothLinePath(
+  points: readonly SparklinePoint[],
+  minY: number,
+  maxY: number,
+): string {
+  const round = (value: number) => Math.round(value * 100) / 100;
+  const clampY = (value: number) => Math.min(maxY, Math.max(minY, value));
+  let path = `M ${round(points[0]!.x)} ${round(points[0]!.y)}`;
+
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const before = points[index - 1] ?? points[index]!;
+    const from = points[index]!;
+    const to = points[index + 1]!;
+    const after = points[index + 2] ?? to;
+    const control1X = round(from.x + (to.x - before.x) / 6);
+    const control1Y = round(clampY(from.y + (to.y - before.y) / 6));
+    const control2X = round(to.x - (after.x - from.x) / 6);
+    const control2Y = round(clampY(to.y - (after.y - from.y) / 6));
+    path += ` C ${control1X} ${control1Y}, ${control2X} ${control2Y}, ${round(to.x)} ${round(to.y)}`;
+  }
+  return path;
+}
+
 function NewChatSparkline({
   projectName,
   activity,
@@ -143,15 +171,21 @@ function NewChatSparkline({
   activity: readonly number[];
 }) {
   const total = activity.reduce((sum, count) => sum + count, 0);
-  if (total === 0) return null;
+  if (total === 0 || activity.length < 2) return null;
 
   const width = 72;
   const height = 24;
-  const baseline = height - 1;
-  const daySlot = width / activity.length;
-  const barWidth = Math.max(1, daySlot - 2);
+  const baseline = height - 2;
+  const chartTop = 3;
   const maximum = Math.max(...activity);
+  const points = activity.map((count, index) => ({
+    x: (index / (activity.length - 1)) * width,
+    y: baseline - (count / maximum) * (baseline - chartTop),
+  }));
+  const line = buildSmoothLinePath(points, chartTop, baseline);
+  const area = `${line} L ${width} ${baseline} L 0 ${baseline} Z`;
   const label = `${projectName}: ${total} new chat${total === 1 ? "" : "s"} in the last 14 days`;
+  const latest = points.at(-1)!;
 
   return (
     <span className="shrink-0" title={label}>
@@ -159,31 +193,19 @@ function NewChatSparkline({
         role="img"
         aria-label={label}
         viewBox={`0 0 ${width} ${height}`}
-        className="h-6 w-[72px] text-primary/70 transition-colors group-hover:text-primary"
+        className="h-6 w-[72px] overflow-visible text-primary/70 transition-colors group-hover:text-primary"
       >
-        <line
-          x1="0"
-          y1={baseline + 0.5}
-          x2={width}
-          y2={baseline + 0.5}
+        <path d={area} fill="currentColor" fillOpacity="0.1" />
+        <path
+          d={line}
+          fill="none"
           stroke="currentColor"
-          strokeOpacity="0.2"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          vectorEffect="non-scaling-stroke"
         />
-        {activity.map((count, index) => {
-          if (count === 0) return null;
-          const barHeight = Math.max(2, (count / maximum) * (baseline - 2));
-          return (
-            <rect
-              key={index}
-              x={index * daySlot + 1}
-              y={baseline - barHeight}
-              width={barWidth}
-              height={barHeight}
-              rx="1"
-              fill="currentColor"
-            />
-          );
-        })}
+        <circle cx={latest.x} cy={latest.y} r="1.75" fill="currentColor" />
       </svg>
     </span>
   );

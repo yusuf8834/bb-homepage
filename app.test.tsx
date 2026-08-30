@@ -125,7 +125,7 @@ describe("project chat launcher", () => {
     slot.lifecycle.unmount();
   });
 
-  it("shows column sparklines only for projects with recent chats", async () => {
+  it("shows line sparklines only for projects with recent chats", async () => {
     const now = Date.now();
     const app = await loadPluginApp(() => import("./app"));
     const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {
@@ -145,7 +145,8 @@ describe("project chat launcher", () => {
     const sparkline = slot.getByRole("img", {
       name: "Busy: 2 new chats in the last 14 days",
     });
-    expect(sparkline.querySelectorAll("rect")).toHaveLength(1);
+    expect(sparkline.querySelectorAll("path")).toHaveLength(2);
+    expect(sparkline.querySelectorAll("circle")).toHaveLength(1);
     expect(slot.queryByRole("img", { name: /^Idle:/ })).toBeNull();
     expect(slot.container.querySelectorAll('svg[viewBox="0 0 16 16"]')).toHaveLength(2);
 
