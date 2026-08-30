@@ -174,6 +174,12 @@ function NewChatSparkline({
   projectName: string;
   activity: readonly number[];
 }) {
+  const [drawn, setDrawn] = useState(false);
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => setDrawn(true));
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
+
   const total = activity.reduce((sum, count) => sum + count, 0);
   if (total === 0 || activity.length < 2) return null;
 
@@ -199,7 +205,15 @@ function NewChatSparkline({
         viewBox={`0 0 ${width} ${height}`}
         className="h-6 w-[72px] overflow-visible text-primary/70 transition-colors group-hover:text-primary"
       >
-        <path d={area} fill="currentColor" fillOpacity="0.1" />
+        <path
+          d={area}
+          fill="currentColor"
+          fillOpacity="0.1"
+          className={[
+            "transition-opacity duration-300 delay-200 motion-reduce:transition-none",
+            drawn ? "opacity-100" : "opacity-0",
+          ].join(" ")}
+        />
         <path
           d={line}
           fill="none"
@@ -208,8 +222,20 @@ function NewChatSparkline({
           strokeLinecap="round"
           strokeLinejoin="round"
           vectorEffect="non-scaling-stroke"
+          pathLength={100}
+          className="[transition:stroke-dashoffset_450ms_ease-out] motion-reduce:transition-none"
+          style={{ strokeDasharray: 100, strokeDashoffset: drawn ? 0 : 100 }}
         />
-        <circle cx={latest.x} cy={latest.y} r="1.75" fill="currentColor" />
+        <circle
+          cx={latest.x}
+          cy={latest.y}
+          r="1.75"
+          fill="currentColor"
+          className={[
+            "transition-opacity duration-300 delay-300 motion-reduce:transition-none",
+            drawn ? "opacity-100" : "opacity-0",
+          ].join(" ")}
+        />
       </svg>
     </span>
   );
