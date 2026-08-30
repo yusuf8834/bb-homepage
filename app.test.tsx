@@ -71,7 +71,7 @@ describe("project chat launcher", () => {
       .toBe("page");
     expect(slot.container.querySelectorAll('img[loading="lazy"]')).toHaveLength(3);
     expect(slot.container.querySelector("[data-homepage-sort]")?.className)
-      .toContain("absolute -top-9 right-0");
+      .not.toContain("absolute");
 
     fireEvent.click(slot.getByRole("button", { name: "Start a new chat in Once" }));
     expect(slot.inspection.sidebarActionCalls).toContainEqual({
