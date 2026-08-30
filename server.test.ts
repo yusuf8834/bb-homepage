@@ -3,6 +3,24 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "./server.js";
 
 describe("project icon route", () => {
+  it("declares configurable homepage behavior", () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "homepage" });
+    plugin(bb);
+
+    expect(harness.inspection.registrations.settingsDescriptors.rankingMode).toMatchObject({
+      type: "select",
+      options: ["Recent activity", "Most chats", "Alphabetical"],
+      default: "Recent activity",
+    });
+    expect(harness.inspection.registrations.settingsDescriptors).toMatchObject({
+      currentProjectFirst: { type: "boolean", default: true },
+      showChatCounts: { type: "boolean", default: true },
+      showUnusedProjects: { type: "boolean", default: true },
+      includePersonalProject: { type: "boolean", default: true },
+      loadProjectIcons: { type: "boolean", default: true },
+    });
+  });
+
   it("serves a declared project icon with private caching and browser hardening", async () => {
     const { bb, harness } = createFakePluginHost({
       pluginId: "homepage",
@@ -103,5 +121,52 @@ describe("project icon route", () => {
     const missing = await harness.behavior.fetchHttp("GET", "/project-icon?projectId=project-1");
     expect(missing.status).toBe(404);
     expect(missing.headers.get("cache-control")).toBe("private, max-age=60");
+  });
+
+  it("coalesces and caches repeated icon requests", async () => {
+    let manifestReads = 0;
+    let releaseManifest: (() => void) | undefined;
+    const manifestGate = new Promise<void>((resolve) => {
+      releaseManifest = resolve;
+    });
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "homepage",
+      sdk: {
+        projects: {
+          files: async () => ({ files: [], truncated: false }),
+          fileContent: async ({ path }) => {
+            if (path === "package.json") {
+              manifestReads += 1;
+              await manifestGate;
+              const content = JSON.stringify({ bb: { branding: { icon: "icon.png" } } });
+              return {
+                content,
+                contentEncoding: "utf8" as const,
+                mimeType: "application/json",
+                sizeBytes: content.length,
+              };
+            }
+            return {
+              content: Buffer.from("png").toString("base64"),
+              contentEncoding: "base64" as const,
+              mimeType: "image/png",
+              sizeBytes: 3,
+            };
+          },
+        },
+      },
+    });
+    plugin(bb);
+
+    const first = harness.behavior.fetchHttp("GET", "/project-icon?projectId=project-1");
+    const second = harness.behavior.fetchHttp("GET", "/project-icon?projectId=project-1");
+    await Promise.resolve();
+    expect(manifestReads).toBe(1);
+    releaseManifest?.();
+    expect((await first).status).toBe(200);
+    expect((await second).status).toBe(200);
+    expect((await harness.behavior.fetchHttp("GET", "/project-icon?projectId=project-1")).status)
+      .toBe(200);
+    expect(manifestReads).toBe(1);
   });
 });

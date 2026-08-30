@@ -1,23 +1,67 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { ProjectIconCache } from "./project-icon-cache.js";
 import { findProjectIcon } from "./project-icons.js";
+import { RANKING_OPTIONS } from "./settings.js";
 
 const FOUND_CACHE_CONTROL = "private, max-age=300";
 const MISSING_CACHE_CONTROL = "private, max-age=60";
 
 export default function plugin(bb: BbPluginApi) {
+  bb.settings.define({
+    rankingMode: {
+      type: "select",
+      label: "Project ordering",
+      description: "Choose how projects are ranked on the homepage.",
+      options: [...RANKING_OPTIONS],
+      default: "Recent activity",
+    },
+    currentProjectFirst: {
+      type: "boolean",
+      label: "Current project first",
+      description: "Keep the currently selected project at the top.",
+      default: true,
+    },
+    showChatCounts: {
+      type: "boolean",
+      label: "Show chat counts",
+      default: true,
+    },
+    showUnusedProjects: {
+      type: "boolean",
+      label: "Show projects without chats",
+      default: true,
+    },
+    includePersonalProject: {
+      type: "boolean",
+      label: "Include Personal",
+      default: true,
+    },
+    loadProjectIcons: {
+      type: "boolean",
+      label: "Load project artwork",
+      description: "Discover icons and logos from project files.",
+      default: true,
+    },
+  });
+
+  const iconCache = new ProjectIconCache((projectId, signal) =>
+    findProjectIcon(
+      {
+        listFiles: (args) => bb.sdk.projects.files(args),
+        readFile: (args) => bb.sdk.projects.fileContent(args),
+      },
+      projectId,
+      signal,
+    ),
+  );
+  bb.onDispose(() => iconCache.dispose());
+
   bb.http.route("GET", "/project-icon", async (context) => {
     const projectId = context.req.query("projectId")?.trim();
     if (!projectId) return new Response(null, { status: 400 });
 
     try {
-      const icon = await findProjectIcon(
-        {
-          listFiles: (args) => bb.sdk.projects.files(args),
-          readFile: (args) => bb.sdk.projects.fileContent(args),
-        },
-        projectId,
-        context.req.raw.signal,
-      );
+      const icon = await iconCache.get(projectId);
 
       if (icon === null) {
         return new Response(null, {

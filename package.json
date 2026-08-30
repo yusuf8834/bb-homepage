@@ -1,7 +1,14 @@
 {
   "name": "bb-plugin-homepage",
   "version": "0.1.0",
-  "description": "Usage-ranked project shortcuts and project icons for the BB homepage.",
+  "description": "Configurable project shortcuts and safe project artwork for the BB homepage.",
+  "license": "MIT",
+  "keywords": [
+    "bb",
+    "bb-plugin",
+    "homepage",
+    "projects"
+  ],
   "type": "module",
   "files": [
     "dist",
@@ -13,7 +20,7 @@
   },
   "bb": {
     "name": "Homepage",
-    "description": "Adds usage-ranked project shortcuts and project icons to the BB homepage.",
+    "description": "Adds configurable project shortcuts and safe project artwork to the BB homepage.",
     "branding": {
       "icon": "GridView"
     },
@@ -44,6 +51,8 @@
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "bb-app": "0.40.0",
+    "bb-app": "^0.40.0",
     "better-sqlite3": "^12.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -58,5 +67,8 @@
     "vaul": "^1.1.2",
     "vitest": "^4.0.0",
     "zod": "^4.3.6"
+  },
+  "dependencies": {
+    "saxes": "^6.0.0"
   }
 }

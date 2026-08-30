@@ -1,14 +1,19 @@
 import { useMemo, useState } from "react";
 import {
   definePluginApp,
+  experimental_useSidebarThreadActions,
   experimental_useSidebarThreads,
-  useBbNavigate,
+  useSettings,
 } from "@get-bb/plugin-sdk/app";
 import type {
   PluginHomepageSectionProps,
   PluginSidebarProject,
   PluginSidebarThread,
 } from "@get-bb/plugin-sdk/app";
+import {
+  parseHomepageSettings,
+  type HomepageSettings,
+} from "./settings.js";
 
 const PROJECT_ICON_URL = "/api/v1/plugins/homepage/http/project-icon";
 
@@ -20,6 +25,8 @@ interface RankedProject extends PluginSidebarProject {
 export function rankProjects(
   projects: readonly PluginSidebarProject[],
   threads: readonly PluginSidebarThread[],
+  settings: HomepageSettings,
+  currentProjectId: string | null,
 ): RankedProject[] {
   const usage = new Map<string, { chatCount: number; lastUsedAt: number }>();
 
@@ -38,12 +45,35 @@ export function rankProjects(
       chatCount: usage.get(project.id)?.chatCount ?? 0,
       lastUsedAt: usage.get(project.id)?.lastUsedAt ?? 0,
     }))
-    .sort(
-      (left, right) =>
-        right.chatCount - left.chatCount ||
+    .filter((project) => settings.includePersonalProject || !project.isPersonal)
+    .filter((project) => settings.showUnusedProjects || project.chatCount > 0)
+    .sort((left, right) => {
+      if (settings.currentProjectFirst) {
+        const currentOrder =
+          Number(right.id === currentProjectId) - Number(left.id === currentProjectId);
+        if (currentOrder !== 0) return currentOrder;
+      }
+
+      if (settings.rankingMode === "Most chats") {
+        return (
+          right.chatCount - left.chatCount ||
+          right.lastUsedAt - left.lastUsedAt ||
+          left.name.localeCompare(right.name)
+        );
+      }
+
+      if (settings.rankingMode === "Alphabetical") {
+        return (
+          left.name.localeCompare(right.name) || right.lastUsedAt - left.lastUsedAt
+        );
+      }
+
+      return (
         right.lastUsedAt - left.lastUsedAt ||
-        left.name.localeCompare(right.name),
-    );
+        right.chatCount - left.chatCount ||
+        left.name.localeCompare(right.name)
+      );
+    });
 }
 
 function FolderIcon() {
@@ -67,9 +97,17 @@ function FolderIcon() {
   );
 }
 
-function ProjectIcon({ projectId, isPersonal }: { projectId: string; isPersonal: boolean }) {
+function ProjectIcon({
+  projectId,
+  isPersonal,
+  loadArtwork,
+}: {
+  projectId: string;
+  isPersonal: boolean;
+  loadArtwork: boolean;
+}) {
   const [showFallback, setShowFallback] = useState(false);
-  const useFallback = isPersonal || showFallback;
+  const useFallback = isPersonal || !loadArtwork || showFallback;
 
   return (
     <span
@@ -94,10 +132,15 @@ function ProjectIcon({ projectId, isPersonal }: { projectId: string; isPersonal:
 
 function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
   const { status, projects, threads } = experimental_useSidebarThreads();
-  const navigate = useBbNavigate();
+  const actions = experimental_useSidebarThreadActions();
+  const settingsState = useSettings();
+  const settings = useMemo(
+    () => parseHomepageSettings(settingsState.values),
+    [settingsState.values],
+  );
   const rankedProjects = useMemo(
-    () => rankProjects(projects, threads),
-    [projects, threads],
+    () => rankProjects(projects, threads, settings, projectId),
+    [projects, projectId, settings, threads],
   );
 
   if (status === "loading") {
@@ -140,18 +183,26 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
             className={className}
             aria-label={`Start a new chat in ${project.name}`}
             aria-current={isCurrent ? "page" : undefined}
-            onClick={() => navigate.toProject(project.id)}
+            onClick={() =>
+              actions.openNewThread({ projectId: project.id, focusPrompt: true })
+            }
           >
-            <ProjectIcon projectId={project.id} isPersonal={project.isPersonal} />
+            <ProjectIcon
+              projectId={project.id}
+              isPersonal={project.isPersonal}
+              loadArtwork={settings.loadProjectIcons}
+            />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-medium text-foreground">
                 {project.name}
               </span>
-              <span className="block text-xs text-muted-foreground">
-                {project.chatCount === 0
-                  ? "No chats yet"
-                  : `${project.chatCount} chat${project.chatCount === 1 ? "" : "s"}`}
-              </span>
+              {settings.showChatCounts ? (
+                <span className="block text-xs text-muted-foreground">
+                  {project.chatCount === 0
+                    ? "No chats yet"
+                    : `${project.chatCount} chat${project.chatCount === 1 ? "" : "s"}`}
+                </span>
+              ) : null}
             </span>
             <span aria-hidden="true" className="text-muted-foreground group-hover:text-foreground">
               +

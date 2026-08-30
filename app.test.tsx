@@ -71,9 +71,9 @@ describe("project chat launcher", () => {
     expect(slot.container.querySelectorAll('img[loading="lazy"]')).toHaveLength(3);
 
     fireEvent.click(slot.getByRole("button", { name: "Start a new chat in Once" }));
-    expect(slot.inspection.navigateCalls).toContainEqual({
-      method: "toProject",
-      projectId: "project-1",
+    expect(slot.inspection.sidebarActionCalls).toContainEqual({
+      method: "openNewThread",
+      options: { projectId: "project-1", focusPrompt: true },
     });
 
     slot.lifecycle.unmount();
@@ -102,6 +102,64 @@ describe("project chat launcher", () => {
       "Start a new chat in Alpha",
     ]);
 
+    slot.lifecycle.unmount();
+  });
+
+  it("applies ranking, visibility, count, and artwork settings", async () => {
+    const app = await loadPluginApp(() => import("./app"));
+    const slot = renderSlot(app.homepageSections[0]!, { projectId: "unused" }, {
+      settings: {
+        rankingMode: "Most chats",
+        currentProjectFirst: false,
+        showChatCounts: false,
+        showUnusedProjects: false,
+        includePersonalProject: false,
+        loadProjectIcons: false,
+      },
+      sidebarThreads: {
+        projects: [
+          { id: "one", name: "One", isPersonal: false },
+          { id: "two", name: "Two", isPersonal: false },
+          { id: "unused", name: "Unused", isPersonal: false },
+          { id: "personal", name: "Personal", isPersonal: true },
+        ],
+        threads: [
+          thread("one-thread", "one", 30),
+          thread("two-a", "two", 10),
+          thread("two-b", "two", 20),
+          thread("personal-thread", "personal", 40),
+        ],
+      },
+    });
+
+    expect(slot.getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "Two+",
+      "One+",
+    ]);
+    expect(slot.container.querySelectorAll("img")).toHaveLength(0);
+    expect(slot.container.querySelectorAll("svg")).toHaveLength(2);
+    slot.lifecycle.unmount();
+  });
+
+  it("supports alphabetical ordering while keeping the current project first", async () => {
+    const app = await loadPluginApp(() => import("./app"));
+    const slot = renderSlot(app.homepageSections[0]!, { projectId: "zulu" }, {
+      settings: { rankingMode: "Alphabetical", currentProjectFirst: true },
+      sidebarThreads: {
+        projects: [
+          { id: "zulu", name: "Zulu", isPersonal: false },
+          { id: "beta", name: "Beta", isPersonal: false },
+          { id: "alpha", name: "Alpha", isPersonal: false },
+        ],
+        threads: [],
+      },
+    });
+
+    expect(slot.getAllByRole("button").map((button) => button.getAttribute("aria-label"))).toEqual([
+      "Start a new chat in Zulu",
+      "Start a new chat in Alpha",
+      "Start a new chat in Beta",
+    ]);
     slot.lifecycle.unmount();
   });
 
