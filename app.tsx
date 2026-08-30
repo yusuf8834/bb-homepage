@@ -12,10 +12,14 @@ import type {
 } from "@get-bb/plugin-sdk/app";
 import {
   parseHomepageSettings,
+  parseRankingMode,
+  RANKING_OPTIONS,
   type HomepageSettings,
+  type RankingMode,
 } from "./settings.js";
 
 const PROJECT_ICON_URL = "/api/v1/plugins/homepage/http/project-icon";
+const RANKING_STORAGE_KEY = "bb-plugin-homepage:ranking-mode";
 
 interface RankedProject extends PluginSidebarProject {
   chatCount: number;
@@ -134,9 +138,14 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
   const { status, projects, threads } = experimental_useSidebarThreads();
   const actions = experimental_useSidebarThreadActions();
   const settingsState = useSettings();
-  const settings = useMemo(
+  const pluginSettings = useMemo(
     () => parseHomepageSettings(settingsState.values),
     [settingsState.values],
+  );
+  const [rankingMode, setRankingMode] = useState<RankingMode>(readRankingMode);
+  const settings = useMemo(
+    () => ({ ...pluginSettings, rankingMode }),
+    [pluginSettings, rankingMode],
   );
   const rankedProjects = useMemo(
     () => rankProjects(projects, threads, settings, projectId),
@@ -167,51 +176,91 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
     );
   }
 
-  return (
-    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-      {rankedProjects.map((project) => {
-        const isCurrent = project.id === projectId;
-        const className = [
-          "group flex min-w-0 items-center gap-3 rounded-lg border bg-card px-4 py-3 text-left transition-colors hover:border-foreground/20 hover:bg-state-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-          isCurrent ? "border-ring bg-state-hover" : "border-border",
-        ].join(" ");
+  function changeRankingMode(value: string): void {
+    const next = parseRankingMode(value);
+    setRankingMode(next);
+    try {
+      window.localStorage.setItem(RANKING_STORAGE_KEY, next);
+    } catch {
+      // Browser storage can be unavailable; sorting still works for this page.
+    }
+  }
 
-        return (
-          <button
-            key={project.id}
-            type="button"
-            className={className}
-            aria-label={`Start a new chat in ${project.name}`}
-            aria-current={isCurrent ? "page" : undefined}
-            onClick={() =>
-              actions.openNewThread({ projectId: project.id, focusPrompt: true })
-            }
+  return (
+    <div className="space-y-3">
+      <div className="flex justify-end">
+        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span>Sort</span>
+          <select
+            aria-label="Sort projects"
+            className="h-8 rounded-md border border-border bg-card px-2 text-xs text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            value={rankingMode}
+            onChange={(event) => changeRankingMode(event.target.value)}
           >
-            <ProjectIcon
-              projectId={project.id}
-              isPersonal={project.isPersonal}
-              loadArtwork={settings.loadProjectIcons}
-            />
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-medium text-foreground">
-                {project.name}
-              </span>
-              {settings.showChatCounts ? (
-                <span className="block text-xs text-muted-foreground">
-                  {project.chatCount === 0
-                    ? "No chats yet"
-                    : `${project.chatCount} chat${project.chatCount === 1 ? "" : "s"}`}
+            {RANKING_OPTIONS.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {rankedProjects.map((project) => {
+          const isCurrent = project.id === projectId;
+          const className = [
+            "group flex min-w-0 items-center gap-3 rounded-lg border bg-card px-4 py-3 text-left transition-colors hover:border-foreground/20 hover:bg-state-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+            isCurrent ? "border-ring bg-state-hover" : "border-border",
+          ].join(" ");
+
+          return (
+            <button
+              key={project.id}
+              type="button"
+              className={className}
+              aria-label={`Start a new chat in ${project.name}`}
+              aria-current={isCurrent ? "page" : undefined}
+              onClick={() =>
+                actions.openNewThread({ projectId: project.id, focusPrompt: true })
+              }
+            >
+              <ProjectIcon
+                projectId={project.id}
+                isPersonal={project.isPersonal}
+                loadArtwork={settings.loadProjectIcons}
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium text-foreground">
+                  {project.name}
                 </span>
-              ) : null}
-            </span>
-            <span aria-hidden="true" className="text-muted-foreground group-hover:text-foreground">
-              +
-            </span>
-          </button>
-        );
-      })}
+                {settings.showChatCounts ? (
+                  <span className="block text-xs text-muted-foreground">
+                    {project.chatCount === 0
+                      ? "No chats yet"
+                      : `${project.chatCount} chat${project.chatCount === 1 ? "" : "s"}`}
+                  </span>
+                ) : null}
+              </span>
+              <span
+                aria-hidden="true"
+                className="text-muted-foreground group-hover:text-foreground"
+              >
+                +
+              </span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
+}
+
+function readRankingMode(): RankingMode {
+  try {
+    return parseRankingMode(window.localStorage.getItem(RANKING_STORAGE_KEY));
+  } catch {
+    return parseRankingMode(undefined);
+  }
 }
 
 export default definePluginApp((app) => {

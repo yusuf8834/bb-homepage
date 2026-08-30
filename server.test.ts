@@ -7,11 +7,7 @@ describe("project icon route", () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "homepage" });
     plugin(bb);
 
-    expect(harness.inspection.registrations.settingsDescriptors.rankingMode).toMatchObject({
-      type: "select",
-      options: ["Recent activity", "Most chats", "Alphabetical"],
-      default: "Recent activity",
-    });
+    expect(harness.inspection.registrations.settingsDescriptors.rankingMode).toBeUndefined();
     expect(harness.inspection.registrations.settingsDescriptors).toMatchObject({
       currentProjectFirst: { type: "boolean", default: true },
       showChatCounts: { type: "boolean", default: true },

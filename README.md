@@ -4,11 +4,12 @@ BB Homepage adds a "Start in a project" section to BB's new-thread page. Each
 project card opens a focused new-thread composer for that project. The plugin
 is intentionally separate from provider plugins.
 
-Recent activity is the default ordering. Plugin settings also offer most chats
-and alphabetical ordering, plus independent controls for keeping the current
-project first, showing chat counts, showing projects without chats, including
-Personal, and loading project artwork. All projects remain visible by default.
-Archived chats and child chats do not affect usage data.
+Recent activity is the default ordering. A selector above the project cards
+also offers most chats and alphabetical ordering, and remembers the choice in
+the current browser. Plugin settings control current-project priority, chat
+counts, projects without chats, Personal, and project artwork. All projects
+remain visible by default. Archived chats and child chats do not affect usage
+data.
 
 For ordinary projects, the plugin looks for a declared BB branding icon or a
 likely icon, favicon, or logo in the project files. Personal projects and

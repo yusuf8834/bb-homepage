@@ -1,20 +1,12 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { ProjectIconCache } from "./project-icon-cache.js";
 import { findProjectIcon } from "./project-icons.js";
-import { RANKING_OPTIONS } from "./settings.js";
 
 const FOUND_CACHE_CONTROL = "private, max-age=300";
 const MISSING_CACHE_CONTROL = "private, max-age=60";
 
 export default function plugin(bb: BbPluginApi) {
   bb.settings.define({
-    rankingMode: {
-      type: "select",
-      label: "Project ordering",
-      description: "Choose how projects are ranked on the homepage.",
-      options: [...RANKING_OPTIONS],
-      default: "Recent activity",
-    },
     currentProjectFirst: {
       type: "boolean",
       label: "Current project first",

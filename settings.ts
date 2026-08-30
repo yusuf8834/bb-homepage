@@ -15,6 +15,8 @@ export interface HomepageSettings {
   loadProjectIcons: boolean;
 }
 
+export type HomepagePluginSettings = Omit<HomepageSettings, "rankingMode">;
+
 export const DEFAULT_HOMEPAGE_SETTINGS: HomepageSettings = {
   rankingMode: "Recent activity",
   currentProjectFirst: true,
@@ -26,19 +28,21 @@ export const DEFAULT_HOMEPAGE_SETTINGS: HomepageSettings = {
 
 export function parseHomepageSettings(
   values: Record<string, string | boolean> | undefined,
-): HomepageSettings {
-  const rankingMode = RANKING_OPTIONS.find(
-    (option) => option === values?.rankingMode,
-  );
-
+): HomepagePluginSettings {
   return {
-    rankingMode: rankingMode ?? DEFAULT_HOMEPAGE_SETTINGS.rankingMode,
     currentProjectFirst: booleanSetting(values, "currentProjectFirst"),
     showChatCounts: booleanSetting(values, "showChatCounts"),
     showUnusedProjects: booleanSetting(values, "showUnusedProjects"),
     includePersonalProject: booleanSetting(values, "includePersonalProject"),
     loadProjectIcons: booleanSetting(values, "loadProjectIcons"),
   };
+}
+
+export function parseRankingMode(value: unknown): RankingMode {
+  return (
+    RANKING_OPTIONS.find((option) => option === value) ??
+    DEFAULT_HOMEPAGE_SETTINGS.rankingMode
+  );
 }
 
 function booleanSetting(

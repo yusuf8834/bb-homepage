@@ -39,6 +39,7 @@ function thread(id: string, projectId: string, updatedAt: number) {
 
 afterEach(() => {
   document.body.innerHTML = "";
+  window.localStorage.clear();
 });
 
 describe("project chat launcher", () => {
@@ -109,7 +110,6 @@ describe("project chat launcher", () => {
     const app = await loadPluginApp(() => import("./app"));
     const slot = renderSlot(app.homepageSections[0]!, { projectId: "unused" }, {
       settings: {
-        rankingMode: "Most chats",
         currentProjectFirst: false,
         showChatCounts: false,
         showUnusedProjects: false,
@@ -132,6 +132,10 @@ describe("project chat launcher", () => {
       },
     });
 
+    fireEvent.change(slot.getByLabelText("Sort projects"), {
+      target: { value: "Most chats" },
+    });
+
     expect(slot.getAllByRole("button").map((button) => button.textContent)).toEqual([
       "Two+",
       "One+",
@@ -144,7 +148,7 @@ describe("project chat launcher", () => {
   it("supports alphabetical ordering while keeping the current project first", async () => {
     const app = await loadPluginApp(() => import("./app"));
     const slot = renderSlot(app.homepageSections[0]!, { projectId: "zulu" }, {
-      settings: { rankingMode: "Alphabetical", currentProjectFirst: true },
+      settings: { currentProjectFirst: true },
       sidebarThreads: {
         projects: [
           { id: "zulu", name: "Zulu", isPersonal: false },
@@ -155,11 +159,42 @@ describe("project chat launcher", () => {
       },
     });
 
+    fireEvent.change(slot.getByLabelText("Sort projects"), {
+      target: { value: "Alphabetical" },
+    });
+
     expect(slot.getAllByRole("button").map((button) => button.getAttribute("aria-label"))).toEqual([
       "Start a new chat in Zulu",
       "Start a new chat in Alpha",
       "Start a new chat in Beta",
     ]);
+    slot.lifecycle.unmount();
+  });
+
+  it("keeps the homepage ordering choice in browser storage", async () => {
+    window.localStorage.setItem("bb-plugin-homepage:ranking-mode", "Most chats");
+    const app = await loadPluginApp(() => import("./app"));
+    const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {
+      sidebarThreads: {
+        projects: [
+          { id: "recent", name: "Recent", isPersonal: false },
+          { id: "busy", name: "Busy", isPersonal: false },
+        ],
+        threads: [
+          thread("recent-thread", "recent", 30),
+          thread("busy-a", "busy", 10),
+          thread("busy-b", "busy", 20),
+        ],
+      },
+    });
+
+    const selector = slot.getByLabelText("Sort projects") as HTMLSelectElement;
+    expect(selector.value).toBe("Most chats");
+    expect(slot.getAllByRole("button")[0]?.textContent).toContain("Busy");
+
+    fireEvent.change(selector, { target: { value: "Alphabetical" } });
+    expect(window.localStorage.getItem("bb-plugin-homepage:ranking-mode"))
+      .toBe("Alphabetical");
     slot.lifecycle.unmount();
   });
 
