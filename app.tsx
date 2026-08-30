@@ -187,8 +187,11 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
   }
 
   return (
-    <div className="space-y-3">
-      <div className="flex justify-end">
+    <div className="relative">
+      <div
+        data-homepage-sort=""
+        className="absolute -top-9 right-0 z-10 flex justify-end"
+      >
         <label className="flex items-center gap-2 text-xs text-muted-foreground">
           <span>Sort</span>
           <select
