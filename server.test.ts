@@ -2,6 +2,31 @@ import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "./server.js";
 
+describe("pinned projects", () => {
+  it("persists pin order and drops unpinned projects", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "homepage" });
+    plugin(bb);
+
+    await expect(harness.behavior.callRpc("listPinnedProjects")).resolves.toEqual({
+      projectIds: [],
+    });
+    await expect(
+      harness.behavior.callRpc("setProjectPinned", { projectId: "a", pinned: true }),
+    ).resolves.toEqual({ projectIds: ["a"] });
+    await harness.behavior.callRpc("setProjectPinned", { projectId: "b", pinned: true });
+    await harness.behavior.callRpc("setProjectPinned", { projectId: "a", pinned: true });
+    await expect(harness.behavior.callRpc("listPinnedProjects")).resolves.toEqual({
+      projectIds: ["a", "b"],
+    });
+    await expect(
+      harness.behavior.callRpc("setProjectPinned", { projectId: "a", pinned: false }),
+    ).resolves.toEqual({ projectIds: ["b"] });
+    await expect(harness.behavior.callRpc("listPinnedProjects")).resolves.toEqual({
+      projectIds: ["b"],
+    });
+  });
+});
+
 describe("project icon route", () => {
   it("declares configurable homepage behavior", () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "homepage" });

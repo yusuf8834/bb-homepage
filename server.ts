@@ -1,9 +1,22 @@
-import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
+import { z } from "zod";
 import { ProjectIconCache } from "./project-icon-cache.js";
 import { findProjectIcon } from "./project-icons.js";
 
 const FOUND_CACHE_CONTROL = "private, max-age=300";
 const MISSING_CACHE_CONTROL = "private, max-age=60";
+const PINNED_PROJECTS_KEY = "pinned-projects";
+
+export const rpcContract = defineRpcContract({
+  listPinnedProjects: {
+    input: z.null(),
+    output: z.object({ projectIds: z.array(z.string()) }),
+  },
+  setProjectPinned: {
+    input: z.object({ projectId: z.string().min(1), pinned: z.boolean() }).strict(),
+    output: z.object({ projectIds: z.array(z.string()) }),
+  },
+});
 
 export default function plugin(bb: BbPluginApi) {
   bb.settings.define({
@@ -33,6 +46,31 @@ export default function plugin(bb: BbPluginApi) {
       label: "Load project artwork",
       description: "Discover icons and logos from project files.",
       default: true,
+    },
+  });
+
+  async function readPinnedProjects(): Promise<string[]> {
+    const stored = await bb.storage.kv.get<unknown>(PINNED_PROJECTS_KEY);
+    if (!Array.isArray(stored)) return [];
+    return stored.filter((value): value is string => typeof value === "string");
+  }
+
+  bb.rpc.register(rpcContract, {
+    async listPinnedProjects() {
+      return { projectIds: await readPinnedProjects() };
+    },
+    async setProjectPinned({ projectId, pinned }) {
+      const current = await readPinnedProjects();
+      const next = pinned
+        ? current.includes(projectId)
+          ? current
+          : [...current, projectId]
+        : current.filter((id) => id !== projectId);
+      if (next.length !== current.length) {
+        await bb.storage.kv.set(PINNED_PROJECTS_KEY, next);
+        bb.realtime.publish("pins-changed", null);
+      }
+      return { projectIds: next };
     },
   });
 

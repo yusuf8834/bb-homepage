@@ -3,6 +3,8 @@ import {
   definePluginApp,
   experimental_useSidebarThreadActions,
   experimental_useSidebarThreads,
+  useRealtime,
+  useRpc,
   useSettings,
 } from "@get-bb/plugin-sdk/app";
 import type {
@@ -12,6 +14,7 @@ import type {
 } from "@get-bb/plugin-sdk/app";
 import { buildNewChatActivityByProject } from "./activity.js";
 import { formatRelativeTime } from "./relative-time.js";
+import type { rpcContract } from "./server.js";
 import {
   parseHomepageSettings,
   parseRankingMode,
@@ -239,6 +242,29 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
     return () => window.clearInterval(timer);
   }, []);
 
+  const rpc = useRpc<typeof rpcContract>();
+  const [pinnedIds, setPinnedIds] = useState<readonly string[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    void rpc.call("listPinnedProjects").then(
+      ({ projectIds }) => {
+        if (!cancelled) setPinnedIds(projectIds);
+      },
+      () => {
+        // Pins are an enhancement; the launcher works without them.
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  useRealtime("pins-changed", () => {
+    void rpc.call("listPinnedProjects").then(
+      ({ projectIds }) => setPinnedIds(projectIds),
+      () => {},
+    );
+  });
+
   if (status === "loading") {
     return (
       <p role="status" className="py-2 text-sm text-muted-foreground">
@@ -273,6 +299,99 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
     }
   }
 
+  function togglePin(targetId: string, pinned: boolean): void {
+    void rpc.call("setProjectPinned", { projectId: targetId, pinned }).then(
+      ({ projectIds }) => setPinnedIds(projectIds),
+      () => {},
+    );
+  }
+
+  const pinnedProjects = pinnedIds
+    .map((id) => rankedProjects.find((project) => project.id === id))
+    .filter((project): project is RankedProject => project !== undefined);
+  const unpinnedProjects = rankedProjects.filter(
+    (project) => !pinnedIds.includes(project.id),
+  );
+
+  function renderProject(project: RankedProject) {
+    const isCurrent = project.id === projectId;
+    const isPinned = pinnedIds.includes(project.id);
+    const activity = activityByProject.get(project.id) ?? [];
+    const className = [
+      "flex w-full min-w-0 items-center gap-3 rounded-lg border bg-card px-4 py-3 text-left transition-colors group-hover:border-foreground/20 group-hover:bg-state-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+      isCurrent ? "border-ring bg-state-hover" : "border-border",
+    ].join(" ");
+
+    return (
+      <div key={project.id} className="group relative">
+        <button
+          type="button"
+          className={className}
+          aria-label={`Start a new chat in ${project.name}`}
+          aria-current={isCurrent ? "page" : undefined}
+          onClick={() =>
+            actions.openNewThread({ projectId: project.id, focusPrompt: true })
+          }
+        >
+          <ProjectIcon
+            projectId={project.id}
+            isPersonal={project.isPersonal}
+            loadArtwork={settings.loadProjectIcons}
+          />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-medium text-foreground">
+              {project.name}
+            </span>
+            {settings.showChatCounts ? (
+              <span className="block truncate text-xs text-muted-foreground">
+                {project.chatCount === 0
+                  ? "No chats yet"
+                  : `${project.chatCount} chat${project.chatCount === 1 ? "" : "s"} · ${formatRelativeTime(project.lastUsedAt, now)}`}
+              </span>
+            ) : null}
+          </span>
+          <NewChatSparkline projectName={project.name} activity={activity} />
+          <span
+            aria-hidden="true"
+            className="flex size-6 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors group-hover:border-primary group-hover:text-primary"
+          >
+            <svg viewBox="0 0 16 16" fill="none" className="size-3.5">
+              <path
+                d="M8 3.25v9.5M3.25 8h9.5"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+              />
+            </svg>
+          </span>
+        </button>
+        <button
+          type="button"
+          aria-label={isPinned ? `Unpin ${project.name}` : `Pin ${project.name}`}
+          aria-pressed={isPinned}
+          className={[
+            "absolute right-1.5 top-1.5 z-10 flex size-6 items-center justify-center rounded-md text-muted-foreground transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+            isPinned ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+          ].join(" ")}
+          onClick={() => togglePin(project.id, !isPinned)}
+        >
+          <svg
+            viewBox="0 0 16 16"
+            fill={isPinned ? "currentColor" : "none"}
+            className="size-3.5"
+          >
+            <path
+              d="M4.75 3.25h6.5v9.4a.25.25 0 0 1-.4.2L8 10.55l-2.85 2.3a.25.25 0 0 1-.4-.2z"
+              stroke="currentColor"
+              strokeWidth="1.3"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="relative">
       <div
@@ -295,61 +414,19 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
           </select>
         </label>
       </div>
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-        {rankedProjects.map((project) => {
-          const isCurrent = project.id === projectId;
-          const activity = activityByProject.get(project.id) ?? [];
-          const className = [
-            "group flex min-w-0 items-center gap-3 rounded-lg border bg-card px-4 py-3 text-left transition-colors hover:border-foreground/20 hover:bg-state-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-            isCurrent ? "border-ring bg-state-hover" : "border-border",
-          ].join(" ");
-
-          return (
-            <button
-              key={project.id}
-              type="button"
-              className={className}
-              aria-label={`Start a new chat in ${project.name}`}
-              aria-current={isCurrent ? "page" : undefined}
-              onClick={() =>
-                actions.openNewThread({ projectId: project.id, focusPrompt: true })
-              }
-            >
-              <ProjectIcon
-                projectId={project.id}
-                isPersonal={project.isPersonal}
-                loadArtwork={settings.loadProjectIcons}
-              />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-medium text-foreground">
-                  {project.name}
-                </span>
-                {settings.showChatCounts ? (
-                  <span className="block truncate text-xs text-muted-foreground">
-                    {project.chatCount === 0
-                      ? "No chats yet"
-                      : `${project.chatCount} chat${project.chatCount === 1 ? "" : "s"} · ${formatRelativeTime(project.lastUsedAt, now)}`}
-                  </span>
-                ) : null}
-              </span>
-              <NewChatSparkline projectName={project.name} activity={activity} />
-              <span
-                aria-hidden="true"
-                className="flex size-6 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors group-hover:border-primary group-hover:text-primary"
-              >
-                <svg viewBox="0 0 16 16" fill="none" className="size-3.5">
-                  <path
-                    d="M8 3.25v9.5M3.25 8h9.5"
-                    stroke="currentColor"
-                    strokeWidth="1.6"
-                    strokeLinecap="round"
-                  />
-                </svg>
-              </span>
-            </button>
-          );
-        })}
-      </div>
+      {pinnedProjects.length > 0 ? (
+        <div className="mb-3">
+          <p className="mb-2 text-xs font-medium text-muted-foreground">Pinned</p>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {pinnedProjects.map(renderProject)}
+          </div>
+        </div>
+      ) : null}
+      {unpinnedProjects.length > 0 ? (
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {unpinnedProjects.map(renderProject)}
+        </div>
+      ) : null}
     </div>
   );
 }

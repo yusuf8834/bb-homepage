@@ -6,7 +6,9 @@ import {
   loadPluginApp,
   mountPluginContentScripts,
   renderSlot,
+  type PluginRpcTestHandlers,
 } from "@get-bb/plugin-sdk/testing/app";
+import type { rpcContract } from "./server.js";
 import { buildNewChatActivity } from "./activity.js";
 import { formatRelativeTime } from "./relative-time.js";
 
@@ -122,7 +124,7 @@ describe("project chat launcher", () => {
       month: "short",
       year: "numeric",
     });
-    expect(slot.getAllByRole("button").map((button) => button.textContent)).toEqual([
+    expect(slot.getAllByRole("button", { name: /Start a new chat/ }).map((button) => button.textContent)).toEqual([
       `Often2 chats · ${epochMonth}`,
       `Once1 chat · ${epochMonth}`,
       "UnusedNo chats yet",
@@ -139,6 +141,45 @@ describe("project chat launcher", () => {
     expect(slot.inspection.sidebarActionCalls).toContainEqual({
       method: "openNewThread",
       options: { projectId: "project-1", focusPrompt: true },
+    });
+
+    slot.lifecycle.unmount();
+  });
+
+  it("renders pinned projects in their own section and toggles pins", async () => {
+    const app = await loadPluginApp(() => import("./app"));
+    const pinHandlers: PluginRpcTestHandlers<typeof rpcContract> = {
+      listPinnedProjects: () => ({ projectIds: ["beta"] }),
+      setProjectPinned: ({ projectId, pinned }) => ({
+        projectIds: pinned ? ["beta", projectId] : [],
+      }),
+    };
+    const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {
+      rpc: pinHandlers,
+      sidebarThreads: {
+        projects: [
+          { id: "alpha", name: "Alpha", isPersonal: false },
+          { id: "beta", name: "Beta", isPersonal: false },
+        ],
+        threads: [],
+      },
+    });
+
+    await slot.findByText("Pinned");
+    expect(
+      slot
+        .getAllByRole("button", { name: /Start a new chat/ })
+        .map((button) => button.getAttribute("aria-label")),
+    ).toEqual(["Start a new chat in Beta", "Start a new chat in Alpha"]);
+    expect(slot.getByRole("button", { name: "Unpin Beta" }).getAttribute("aria-pressed"))
+      .toBe("true");
+
+    fireEvent.click(slot.getByRole("button", { name: "Unpin Beta" }));
+    await slot.findByRole("button", { name: "Pin Beta" });
+    expect(slot.queryByText("Pinned")).toBeNull();
+    expect(slot.inspection.rpcCalls).toContainEqual({
+      method: "setProjectPinned",
+      input: { projectId: "beta", pinned: false },
     });
 
     slot.lifecycle.unmount();
@@ -167,7 +208,7 @@ describe("project chat launcher", () => {
     expect(sparkline.querySelectorAll("path")).toHaveLength(2);
     expect(sparkline.querySelectorAll("circle")).toHaveLength(1);
     expect(slot.queryByRole("img", { name: /^Idle:/ })).toBeNull();
-    expect(slot.container.querySelectorAll('svg[viewBox="0 0 16 16"]')).toHaveLength(2);
+    expect(slot.container.querySelectorAll('svg[viewBox="0 0 16 16"]')).toHaveLength(4);
 
     slot.lifecycle.unmount();
   });
@@ -189,7 +230,7 @@ describe("project chat launcher", () => {
       },
     });
 
-    expect(slot.getAllByRole("button").map((button) => button.getAttribute("aria-label"))).toEqual([
+    expect(slot.getAllByRole("button", { name: /Start a new chat/ }).map((button) => button.getAttribute("aria-label"))).toEqual([
       "Start a new chat in Beta",
       "Start a new chat in Gamma",
       "Start a new chat in Alpha",
@@ -228,7 +269,7 @@ describe("project chat launcher", () => {
       target: { value: "Most chats" },
     });
 
-    expect(slot.getAllByRole("button").map((button) => button.textContent)).toEqual([
+    expect(slot.getAllByRole("button", { name: /Start a new chat/ }).map((button) => button.textContent)).toEqual([
       "Two",
       "One",
     ]);
@@ -255,7 +296,7 @@ describe("project chat launcher", () => {
       target: { value: "Alphabetical" },
     });
 
-    expect(slot.getAllByRole("button").map((button) => button.getAttribute("aria-label"))).toEqual([
+    expect(slot.getAllByRole("button", { name: /Start a new chat/ }).map((button) => button.getAttribute("aria-label"))).toEqual([
       "Start a new chat in Zulu",
       "Start a new chat in Alpha",
       "Start a new chat in Beta",
@@ -282,7 +323,7 @@ describe("project chat launcher", () => {
 
     const selector = slot.getByLabelText("Sort projects") as HTMLSelectElement;
     expect(selector.value).toBe("Most chats");
-    expect(slot.getAllByRole("button")[0]?.textContent).toContain("Busy");
+    expect(slot.getAllByRole("button", { name: /Start a new chat/ })[0]?.textContent).toContain("Busy");
 
     fireEvent.change(selector, { target: { value: "Alphabetical" } });
     expect(window.localStorage.getItem("bb-plugin-homepage:ranking-mode"))
