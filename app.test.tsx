@@ -2,7 +2,11 @@
 
 import { fireEvent } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
+import {
+  loadPluginApp,
+  mountPluginContentScripts,
+  renderSlot,
+} from "@get-bb/plugin-sdk/testing/app";
 import { buildNewChatActivity } from "./activity.js";
 
 function thread(id: string, projectId: string, updatedAt: number) {
@@ -44,6 +48,23 @@ afterEach(() => {
 });
 
 describe("project chat launcher", () => {
+  it("hides the main-page recent chats section and cleans up on disposal", async () => {
+    const recents = document.createElement("section");
+    recents.dataset.rootComposeMobileRecents = "";
+    document.body.append(recents);
+
+    const app = await loadPluginApp(() => import("./app"));
+    const scripts = await mountPluginContentScripts(app, { pluginId: "homepage" });
+    const style = document.head.querySelector("style[data-bb-homepage-hide-recents]");
+
+    expect(scripts.inspection.mountedIds).toEqual(["hide-homepage-recent-chats"]);
+    expect(style?.textContent).toContain("[data-root-compose-mobile-recents]");
+    expect(window.getComputedStyle(recents).display).toBe("none");
+
+    await scripts.lifecycle.dispose();
+    expect(style?.isConnected).toBe(false);
+  });
+
   it("builds a 14-day series from new root chats", () => {
     const now = new Date(2026, 7, 30, 12).getTime();
     const oneDayAgo = new Date(2026, 7, 29, 9).getTime();

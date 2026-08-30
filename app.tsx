@@ -332,6 +332,18 @@ function readRankingMode(): RankingMode {
 }
 
 export default definePluginApp((app) => {
+  app.contentScripts.register({
+    id: "hide-homepage-recent-chats",
+    mount() {
+      const style = document.createElement("style");
+      style.dataset.bbHomepageHideRecents = "";
+      style.textContent = "[data-root-compose-mobile-recents] { display: none !important; }";
+      document.head.append(style);
+
+      return () => style.remove();
+    },
+  });
+
   app.slots.homepageSection({
     id: "project-chat-launcher",
     title: "Start in a project",
