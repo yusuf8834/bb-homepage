@@ -7,13 +7,11 @@ function localDayKey(timestamp: number): string {
   return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
 }
 
-export function buildNewChatActivity(
+export function buildNewChatActivityByProject(
   threads: readonly PluginSidebarThread[],
-  projectId: string,
   now = Date.now(),
-): number[] {
+): Map<string, number[]> {
   const dayIndexes = new Map<string, number>();
-  const activity = Array.from({ length: ACTIVITY_DAYS }, () => 0);
 
   for (let index = 0; index < ACTIVITY_DAYS; index += 1) {
     const date = new Date(now);
@@ -22,11 +20,29 @@ export function buildNewChatActivity(
     dayIndexes.set(localDayKey(date.getTime()), index);
   }
 
+  const byProject = new Map<string, number[]>();
   for (const thread of threads) {
-    if (thread.projectId !== projectId || thread.parentThreadId !== null) continue;
+    if (thread.parentThreadId !== null) continue;
     const index = dayIndexes.get(localDayKey(thread.createdAt));
-    if (index !== undefined) activity[index] += 1;
-  }
+    if (index === undefined) continue;
 
-  return activity;
+    let activity = byProject.get(thread.projectId);
+    if (activity === undefined) {
+      activity = Array.from({ length: ACTIVITY_DAYS }, () => 0);
+      byProject.set(thread.projectId, activity);
+    }
+    activity[index] += 1;
+  }
+  return byProject;
+}
+
+export function buildNewChatActivity(
+  threads: readonly PluginSidebarThread[],
+  projectId: string,
+  now = Date.now(),
+): number[] {
+  return (
+    buildNewChatActivityByProject(threads, now).get(projectId) ??
+    Array.from({ length: ACTIVITY_DAYS }, () => 0)
+  );
 }

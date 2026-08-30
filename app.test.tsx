@@ -83,15 +83,15 @@ describe("project chat launcher", () => {
     });
 
     expect(slot.getAllByRole("button").map((button) => button.textContent)).toEqual([
-      "Often2 chats14d+",
-      "Once1 chat14d+",
-      "UnusedNo chats yet14d+",
+      "Often2 chats",
+      "Once1 chat",
+      "UnusedNo chats yet",
     ]);
     expect(slot.getByRole("button", { name: "Start a new chat in Often" }).getAttribute("aria-current"))
       .toBe("page");
     expect(slot.container.querySelectorAll('img[loading="lazy"]')).toHaveLength(3);
-    expect(slot.getAllByRole("img", { name: /new chats? in the last 14 days/ }))
-      .toHaveLength(3);
+    expect(slot.queryAllByRole("img", { name: /new chats? in the last 14 days/ }))
+      .toHaveLength(0);
     expect(slot.container.querySelector("[data-homepage-sort]")?.className)
       .not.toContain("absolute");
 
@@ -100,6 +100,33 @@ describe("project chat launcher", () => {
       method: "openNewThread",
       options: { projectId: "project-1", focusPrompt: true },
     });
+
+    slot.lifecycle.unmount();
+  });
+
+  it("shows column sparklines only for projects with recent chats", async () => {
+    const now = Date.now();
+    const app = await loadPluginApp(() => import("./app"));
+    const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {
+      sidebarThreads: {
+        projects: [
+          { id: "busy", name: "Busy", isPersonal: false },
+          { id: "idle", name: "Idle", isPersonal: false },
+        ],
+        threads: [
+          thread("busy-a", "busy", now),
+          thread("busy-b", "busy", now),
+          thread("idle-old", "idle", 30),
+        ],
+      },
+    });
+
+    const sparkline = slot.getByRole("img", {
+      name: "Busy: 2 new chats in the last 14 days",
+    });
+    expect(sparkline.querySelectorAll("rect")).toHaveLength(1);
+    expect(slot.queryByRole("img", { name: /^Idle:/ })).toBeNull();
+    expect(slot.container.querySelectorAll('svg[viewBox="0 0 16 16"]')).toHaveLength(2);
 
     slot.lifecycle.unmount();
   });
@@ -161,8 +188,8 @@ describe("project chat launcher", () => {
     });
 
     expect(slot.getAllByRole("button").map((button) => button.textContent)).toEqual([
-      "Two14d+",
-      "One14d+",
+      "Two",
+      "One",
     ]);
     expect(slot.container.querySelectorAll("img")).toHaveLength(0);
     expect(slot.container.querySelectorAll('svg[viewBox="0 0 24 24"]')).toHaveLength(2);
