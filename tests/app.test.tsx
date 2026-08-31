@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { fireEvent, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   loadPluginApp,
   mountPluginContentScripts,
@@ -555,17 +555,24 @@ describe("project chat launcher", () => {
       configurable: true,
       value: () => ({ top: 100, height: 40 }),
     });
+    const setPointerCapture = vi.fn();
+    Object.defineProperty(gamma, "setPointerCapture", {
+      configurable: true,
+      value: setPointerCapture,
+    });
     firePointer(gamma!, "pointerdown", {
       button: 0,
       clientX: 20,
       clientY: 200,
       pointerId: 1,
     });
+    expect(setPointerCapture).not.toHaveBeenCalled();
     firePointer(gamma!, "pointermove", {
       clientX: 20,
       clientY: 90,
       pointerId: 1,
     });
+    expect(setPointerCapture).toHaveBeenCalledWith(1);
     expect(gamma?.querySelector("[data-drag-handle]")).not.toBeNull();
     firePointer(gamma!, "pointerup", {
       clientX: 20,
@@ -621,7 +628,7 @@ describe("project chat launcher", () => {
     restored.lifecycle.unmount();
   });
 
-  it("still opens a project when a manual-mode pointer press does not move", async () => {
+  it("keeps manual-mode cards clickable below the drag activation distance", async () => {
     window.localStorage.setItem("bb-plugin-homepage:ranking-mode", "Manual");
     const app = await loadPluginApp(() => import("../app"));
     const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {
@@ -634,6 +641,11 @@ describe("project chat launcher", () => {
       name: "Start a new chat in Alpha",
     });
     const card = button.closest<HTMLElement>("[data-project-id]");
+    const setPointerCapture = vi.fn();
+    Object.defineProperty(card, "setPointerCapture", {
+      configurable: true,
+      value: setPointerCapture,
+    });
 
     firePointer(card!, "pointerdown", {
       button: 0,
@@ -641,14 +653,20 @@ describe("project chat launcher", () => {
       clientY: 20,
       pointerId: 1,
     });
+    firePointer(card!, "pointermove", {
+      clientX: 24,
+      clientY: 23,
+      pointerId: 1,
+    });
     firePointer(card!, "pointerup", {
       button: 0,
-      clientX: 20,
-      clientY: 20,
+      clientX: 24,
+      clientY: 23,
       pointerId: 1,
     });
     fireEvent.click(button);
 
+    expect(setPointerCapture).not.toHaveBeenCalled();
     expect(slot.inspection.sidebarActionCalls).toContainEqual({
       method: "openNewThread",
       options: { projectId: "alpha", focusPrompt: true },

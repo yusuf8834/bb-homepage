@@ -28,6 +28,7 @@ import {
 const PROJECT_ICON_URL = "/api/v1/plugins/homepage/http/project-icon";
 const RANKING_STORAGE_KEY = "bb-plugin-homepage:ranking-mode";
 const MANUAL_ORDER_STORAGE_KEY = "bb-plugin-homepage:manual-project-order";
+const DRAG_ACTIVATION_DISTANCE = 8;
 
 interface RankedProject extends PluginSidebarProject {
   chatCount: number;
@@ -721,7 +722,7 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
     const className = [
       "flex w-full min-w-0 items-center gap-3 rounded-lg border bg-card px-4 py-3 text-left transition-colors group-hover:border-foreground/20 group-hover:bg-state-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
       isCurrent ? "border-foreground/20 bg-state-hover" : "border-border",
-      isManual && !isEditing ? "cursor-grab active:cursor-grabbing" : "",
+      !isEditing ? (isDragging ? "cursor-grabbing select-none" : "cursor-pointer") : "",
       isDragging ? "opacity-50" : "",
     ].join(" ");
 
@@ -827,7 +828,6 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
                 startY: event.clientY,
                 started: false,
               };
-              event.currentTarget.setPointerCapture?.(event.pointerId);
             }}
             onPointerMove={(event) => {
               const gesture = pointerDragRef.current;
@@ -837,9 +837,10 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
                   event.clientX - gesture.startX,
                   event.clientY - gesture.startY,
                 );
-                if (distance < 6) return;
+                if (distance < DRAG_ACTIVATION_DISTANCE) return;
                 gesture.started = true;
                 setDraggedProjectId(gesture.projectId);
+                event.currentTarget.setPointerCapture?.(event.pointerId);
               }
               event.preventDefault();
               updatePointerDropTarget(event.clientX, event.clientY);
