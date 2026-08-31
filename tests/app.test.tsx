@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { fireEvent } from "@testing-library/react";
+import { fireEvent, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   loadPluginApp,
@@ -153,6 +153,7 @@ describe("project chat launcher", () => {
       setProjectPinned: ({ projectId, pinned }) => ({
         projectIds: pinned ? ["beta", projectId] : [],
       }),
+      renameProject: ({ projectId, name }) => ({ projectId, name }),
     };
     const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {
       rpc: pinHandlers,
@@ -205,6 +206,40 @@ describe("project chat launcher", () => {
     expect(
       trigger?.querySelector('[aria-label="Start a new chat in Solo"]'),
     ).not.toBeNull();
+
+    slot.lifecycle.unmount();
+  });
+
+  it("renames a project inline by right-clicking its icon", async () => {
+    const app = await loadPluginApp(() => import("../app"));
+    const rpcHandlers: PluginRpcTestHandlers<typeof rpcContract> = {
+      listPinnedProjects: () => ({ projectIds: [] }),
+      setProjectPinned: () => ({ projectIds: [] }),
+      renameProject: ({ projectId, name }) => ({ projectId, name }),
+    };
+    const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {
+      rpc: rpcHandlers,
+      sidebarThreads: {
+        projects: [{ id: "solo", name: "Solo", isPersonal: false }],
+        threads: [],
+      },
+    });
+
+    const icon = slot.container.querySelector("[data-homepage-project-icon]");
+    expect(icon).not.toBeNull();
+    fireEvent.contextMenu(icon!);
+
+    const input = await slot.findByRole("textbox", { name: "Rename Solo" });
+    fireEvent.change(input, { target: { value: "Renamed" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => {
+      expect(slot.inspection.rpcCalls).toContainEqual({
+        method: "renameProject",
+        input: { projectId: "solo", name: "Renamed" },
+      });
+    });
+    await slot.findByRole("button", { name: "Start a new chat in Renamed" });
 
     slot.lifecycle.unmount();
   });

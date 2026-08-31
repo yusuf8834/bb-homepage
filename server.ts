@@ -16,6 +16,15 @@ export const rpcContract = defineRpcContract({
     input: z.object({ projectId: z.string().min(1), pinned: z.boolean() }).strict(),
     output: z.object({ projectIds: z.array(z.string()) }),
   },
+  renameProject: {
+    input: z
+      .object({
+        projectId: z.string().min(1),
+        name: z.string().trim().min(1).max(200),
+      })
+      .strict(),
+    output: z.object({ projectId: z.string(), name: z.string() }),
+  },
 });
 
 export default function plugin(bb: BbPluginApi) {
@@ -71,6 +80,10 @@ export default function plugin(bb: BbPluginApi) {
         bb.realtime.publish("pins-changed", null);
       }
       return { projectIds: next };
+    },
+    async renameProject({ projectId, name }) {
+      const project = await bb.sdk.projects.update({ projectId, name });
+      return { projectId: project.id, name: project.name };
     },
   });
 

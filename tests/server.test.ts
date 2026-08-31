@@ -2,6 +2,50 @@ import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server.js";
 
+describe("project renaming", () => {
+  it("trims the name and updates the project through the BB SDK", async () => {
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "homepage",
+      sdk: {
+        projects: {
+          update: async ({ projectId, name }) => ({
+            createdAt: 1,
+            gitRemoteUrl: null,
+            id: projectId,
+            kind: "standard" as const,
+            name: name ?? "Old name",
+            sources: [],
+            updatedAt: 2,
+          }),
+        },
+      },
+    });
+    plugin(bb);
+
+    await expect(
+      harness.behavior.callRpc("renameProject", {
+        projectId: "project-1",
+        name: "  New name  ",
+      }),
+    ).resolves.toEqual({ projectId: "project-1", name: "New name" });
+    expect(harness.inspection.sdk.callsTo("projects.update")).toEqual([
+      [{ projectId: "project-1", name: "New name" }],
+    ]);
+  });
+
+  it("rejects an empty project name", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "homepage" });
+    plugin(bb);
+
+    await expect(
+      harness.behavior.callRpc("renameProject", {
+        projectId: "project-1",
+        name: "   ",
+      }),
+    ).rejects.toThrow();
+  });
+});
+
 describe("pinned projects", () => {
   it("persists pin order and drops unpinned projects", async () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "homepage" });

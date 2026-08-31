@@ -32,6 +32,16 @@ interface RankedProject extends PluginSidebarProject {
   lastUsedAt: number;
 }
 
+interface RenameTarget {
+  id: string;
+  name: string;
+}
+
+interface ProjectNameOverride {
+  name: string;
+  previousName: string;
+}
+
 function rankProjects(
   projects: readonly PluginSidebarProject[],
   threads: readonly PluginSidebarThread[],
@@ -111,10 +121,12 @@ function ProjectIcon({
   projectId,
   isPersonal,
   loadArtwork,
+  onRename,
 }: {
   projectId: string;
   isPersonal: boolean;
   loadArtwork: boolean;
+  onRename?: () => void;
 }) {
   const [showFallback, setShowFallback] = useState(false);
   const useFallback = isPersonal || !loadArtwork || showFallback;
@@ -122,7 +134,17 @@ function ProjectIcon({
   return (
     <span
       aria-hidden="true"
+      data-homepage-project-icon=""
       className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted text-muted-foreground group-hover:text-foreground"
+      onContextMenu={
+        onRename
+          ? (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onRename();
+            }
+          : undefined
+      }
     >
       {useFallback ? (
         <FolderIcon />
@@ -236,9 +258,20 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
     () => ({ ...pluginSettings, rankingMode }),
     [pluginSettings, rankingMode],
   );
+  const [projectNameOverrides, setProjectNameOverrides] = useState<
+    Readonly<Record<string, ProjectNameOverride>>
+  >({});
+  const displayedProjects = useMemo(
+    () =>
+      projects.map((project) => {
+        const override = projectNameOverrides[project.id];
+        return override ? { ...project, name: override.name } : project;
+      }),
+    [projectNameOverrides, projects],
+  );
   const rankedProjects = useMemo(
-    () => rankProjects(projects, threads, settings, projectId),
-    [projects, projectId, settings, threads],
+    () => rankProjects(displayedProjects, threads, settings, projectId),
+    [displayedProjects, projectId, settings, threads],
   );
   const activityByProject = useMemo(
     () => buildNewChatActivityByProject(threads),
@@ -251,6 +284,10 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
   }, []);
 
   const rpc = useRpc<typeof rpcContract>();
+  const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
+  const [renameName, setRenameName] = useState("");
+  const [renameError, setRenameError] = useState<string | null>(null);
+  const [isRenaming, setIsRenaming] = useState(false);
   const [pinnedIds, setPinnedIds] = useState<readonly string[]>([]);
   useEffect(() => {
     let cancelled = false;
@@ -272,6 +309,21 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
       () => {},
     );
   });
+
+  useEffect(() => {
+    setProjectNameOverrides((current) => {
+      const next = { ...current };
+      let changed = false;
+      for (const [targetId, override] of Object.entries(current)) {
+        const project = projects.find((candidate) => candidate.id === targetId);
+        if (!project || project.name !== override.previousName) {
+          delete next[targetId];
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }, [projects]);
 
   if (status === "loading") {
     return (
@@ -314,6 +366,54 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
     );
   }
 
+  function startRenaming(project: RankedProject): void {
+    setRenameTarget({ id: project.id, name: project.name });
+    setRenameName(project.name);
+    setRenameError(null);
+  }
+
+  function cancelRenaming(): void {
+    if (isRenaming) return;
+    setRenameTarget(null);
+    setRenameName("");
+    setRenameError(null);
+  }
+
+  function submitRename(): void {
+    if (!renameTarget || isRenaming) return;
+    const name = renameName.trim();
+    if (!name) {
+      setRenameError("Enter a project name.");
+      return;
+    }
+    if (name === renameTarget.name) {
+      cancelRenaming();
+      return;
+    }
+
+    const target = renameTarget;
+    setIsRenaming(true);
+    setRenameError(null);
+    void rpc.call("renameProject", { projectId: target.id, name }).then(
+      (renamedProject) => {
+        setProjectNameOverrides((current) => ({
+          ...current,
+          [renamedProject.projectId]: {
+            name: renamedProject.name,
+            previousName: target.name,
+          },
+        }));
+        setRenameTarget(null);
+        setRenameName("");
+        setIsRenaming(false);
+      },
+      () => {
+        setRenameError("Project could not be renamed.");
+        setIsRenaming(false);
+      },
+    );
+  }
+
   const pinnedProjects = pinnedIds
     .map((id) => rankedProjects.find((project) => project.id === id))
     .filter((project): project is RankedProject => project !== undefined);
@@ -324,6 +424,7 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
   function renderProject(project: RankedProject) {
     const isCurrent = project.id === projectId;
     const isPinned = pinnedIds.includes(project.id);
+    const isEditing = renameTarget?.id === project.id;
     const activity = activityByProject.get(project.id) ?? [];
     const className = [
       "flex w-full min-w-0 items-center gap-3 rounded-lg border bg-card px-4 py-3 text-left transition-colors group-hover:border-foreground/20 group-hover:bg-state-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
@@ -333,71 +434,124 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
     const menuItemClassName =
       "flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-foreground outline-none data-[highlighted]:bg-state-hover";
 
-    return (
-      <ContextMenu.Root key={project.id}>
-        <ContextMenu.Trigger asChild>
-          <div className="group relative">
-            <button
-              type="button"
-              className={className}
-              aria-label={`Start a new chat in ${project.name}`}
-              aria-current={isCurrent ? "page" : undefined}
-              onClick={() =>
-                actions.openNewThread({ projectId: project.id, focusPrompt: true })
-              }
+    const cardContent = (
+      <>
+        <ProjectIcon
+          projectId={project.id}
+          isPersonal={project.isPersonal}
+          loadArtwork={settings.loadProjectIcons}
+          onRename={
+            project.isPersonal || isEditing ? undefined : () => startRenaming(project)
+          }
+        />
+        <span className="min-w-0 flex-1">
+          {isEditing ? (
+            <input
+              autoFocus
+              aria-label={`Rename ${project.name}`}
+              aria-invalid={renameError ? "true" : undefined}
+              disabled={isRenaming}
+              maxLength={200}
+              title="Press Enter to save or Escape to cancel"
+              value={renameName}
+              className="h-7 w-full rounded-md border border-ring bg-background px-2 text-sm font-medium text-foreground shadow-sm outline-none ring-1 ring-ring/20 selection:bg-primary/20"
+              onChange={(event) => {
+                setRenameName(event.target.value);
+                setRenameError(null);
+              }}
+              onClick={(event) => event.stopPropagation()}
+              onContextMenu={(event) => event.stopPropagation()}
+              onFocus={(event) => event.currentTarget.select()}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  submitRename();
+                } else if (event.key === "Escape") {
+                  event.preventDefault();
+                  cancelRenaming();
+                }
+              }}
+              onBlur={cancelRenaming}
+            />
+          ) : (
+            <span className="block truncate text-sm font-medium text-foreground">
+              {project.name}
+            </span>
+          )}
+          {renameError && isEditing ? (
+            <span role="alert" className="mt-1 block truncate text-xs text-destructive">
+              {renameError}
+            </span>
+          ) : settings.showChatCounts ? (
+            <span className="block truncate text-xs text-muted-foreground">
+              {project.chatCount === 0
+                ? "No chats yet"
+                : `${project.chatCount} chat${project.chatCount === 1 ? "" : "s"} · ${formatRelativeTime(project.lastUsedAt, now)}`}
+            </span>
+          ) : null}
+        </span>
+        {!isEditing ? (
+          <>
+            <NewChatSparkline projectName={project.name} activity={activity} />
+            <span
+              aria-hidden="true"
+              className="flex size-6 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors group-hover:border-primary group-hover:text-primary"
             >
-              <ProjectIcon
-                projectId={project.id}
-                isPersonal={project.isPersonal}
-                loadArtwork={settings.loadProjectIcons}
-              />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-medium text-foreground">
-                  {project.name}
-                </span>
-                {settings.showChatCounts ? (
-                  <span className="block truncate text-xs text-muted-foreground">
-                    {project.chatCount === 0
-                      ? "No chats yet"
-                      : `${project.chatCount} chat${project.chatCount === 1 ? "" : "s"} · ${formatRelativeTime(project.lastUsedAt, now)}`}
-                  </span>
-                ) : null}
-              </span>
-              <NewChatSparkline projectName={project.name} activity={activity} />
-              <span
-                aria-hidden="true"
-                className="flex size-6 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors group-hover:border-primary group-hover:text-primary"
-              >
-                <svg viewBox="0 0 16 16" fill="none" className="size-3.5">
-                  <path
-                    d="M8 3.25v9.5M3.25 8h9.5"
-                    stroke="currentColor"
-                    strokeWidth="1.6"
-                    strokeLinecap="round"
-                  />
-                </svg>
-              </span>
-            </button>
-            <button
-              type="button"
-              aria-label={isPinned ? `Unpin ${project.name}` : `Pin ${project.name}`}
-              aria-pressed={isPinned}
-              className="absolute right-[52px] top-1/2 z-10 flex size-6 -translate-y-1/2 items-center justify-center rounded-md border border-border bg-card text-muted-foreground opacity-0 shadow-sm transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring group-hover:opacity-100"
-              onClick={() => togglePin(project.id, !isPinned)}
-            >
-              <svg
-                viewBox="0 0 16 16"
-                fill={isPinned ? "currentColor" : "none"}
-                className="size-3.5"
-              >
+              <svg viewBox="0 0 16 16" fill="none" className="size-3.5">
                 <path
-                  d="M4.75 3.25h6.5v9.4a.25.25 0 0 1-.4.2L8 10.55l-2.85 2.3a.25.25 0 0 1-.4-.2z"
+                  d="M8 3.25v9.5M3.25 8h9.5"
                   stroke="currentColor"
-                  strokeWidth="1.3"
-                  strokeLinejoin="round"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
                 />
               </svg>
-            </button>
+            </span>
+          </>
+        ) : null}
+      </>
+    );
+
+    return (
+      <ContextMenu.Root key={project.id}>
+        <ContextMenu.Trigger asChild disabled={isEditing}>
+          <div className="group relative">
+            {isEditing ? (
+              <div className={className}>{cardContent}</div>
+            ) : (
+              <button
+                type="button"
+                className={className}
+                aria-label={`Start a new chat in ${project.name}`}
+                aria-current={isCurrent ? "page" : undefined}
+                onClick={() =>
+                  actions.openNewThread({ projectId: project.id, focusPrompt: true })
+                }
+              >
+                {cardContent}
+              </button>
+            )}
+            {!isEditing ? (
+              <button
+                type="button"
+                aria-label={isPinned ? `Unpin ${project.name}` : `Pin ${project.name}`}
+                aria-pressed={isPinned}
+                className="absolute right-[52px] top-1/2 z-10 flex size-6 -translate-y-1/2 items-center justify-center rounded-md border border-border bg-card text-muted-foreground opacity-0 shadow-sm transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring group-hover:opacity-100"
+                onClick={() => togglePin(project.id, !isPinned)}
+              >
+                <svg
+                  viewBox="0 0 16 16"
+                  fill={isPinned ? "currentColor" : "none"}
+                  className="size-3.5"
+                >
+                  <path
+                    d="M4.75 3.25h6.5v9.4a.25.25 0 0 1-.4.2L8 10.55l-2.85 2.3a.25.25 0 0 1-.4-.2z"
+                    stroke="currentColor"
+                    strokeWidth="1.3"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </button>
+            ) : null}
           </div>
         </ContextMenu.Trigger>
         <ContextMenu.Portal>
@@ -416,6 +570,14 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
             >
               {isPinned ? "Unpin" : "Pin"}
             </ContextMenu.Item>
+            {!project.isPersonal ? (
+              <ContextMenu.Item
+                className={menuItemClassName}
+                onSelect={() => startRenaming(project)}
+              >
+                Rename
+              </ContextMenu.Item>
+            ) : null}
           </ContextMenu.Content>
         </ContextMenu.Portal>
       </ContextMenu.Root>
