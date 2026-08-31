@@ -12,6 +12,7 @@
   "type": "module",
   "files": [
     "dist",
+    "docs",
     "README.md"
   ],
   "engines": {
