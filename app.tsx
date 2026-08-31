@@ -26,6 +26,7 @@ import {
 
 const PROJECT_ICON_URL = "/api/v1/plugins/homepage/http/project-icon";
 const RANKING_STORAGE_KEY = "bb-plugin-homepage:ranking-mode";
+const MANUAL_ORDER_STORAGE_KEY = "bb-plugin-homepage:manual-project-order";
 
 interface RankedProject extends PluginSidebarProject {
   chatCount: number;
@@ -47,8 +48,12 @@ function rankProjects(
   threads: readonly PluginSidebarThread[],
   settings: HomepageSettings,
   currentProjectId: string | null,
+  manualOrder: readonly string[],
 ): RankedProject[] {
   const usage = new Map<string, { chatCount: number; lastUsedAt: number }>();
+  const manualPositions = new Map(
+    manualOrder.map((projectId, index) => [projectId, index]),
+  );
 
   for (const thread of threads) {
     if (thread.isArchived || thread.parentThreadId !== null) continue;
@@ -68,10 +73,16 @@ function rankProjects(
     .filter((project) => settings.includePersonalProject || !project.isPersonal)
     .filter((project) => settings.showUnusedProjects || project.chatCount > 0)
     .sort((left, right) => {
-      if (settings.currentProjectFirst) {
+      if (settings.currentProjectFirst && settings.rankingMode !== "Manual") {
         const currentOrder =
           Number(right.id === currentProjectId) - Number(left.id === currentProjectId);
         if (currentOrder !== 0) return currentOrder;
+      }
+
+      if (settings.rankingMode === "Manual") {
+        const leftPosition = manualPositions.get(left.id) ?? Number.MAX_SAFE_INTEGER;
+        const rightPosition = manualPositions.get(right.id) ?? Number.MAX_SAFE_INTEGER;
+        return leftPosition - rightPosition || left.name.localeCompare(right.name);
       }
 
       if (settings.rankingMode === "Most chats") {
@@ -254,6 +265,7 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
     [settingsState.values],
   );
   const [rankingMode, setRankingMode] = useState<RankingMode>(readRankingMode);
+  const [manualOrder, setManualOrder] = useState<readonly string[]>(readManualOrder);
   const settings = useMemo(
     () => ({ ...pluginSettings, rankingMode }),
     [pluginSettings, rankingMode],
@@ -270,8 +282,8 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
     [projectNameOverrides, projects],
   );
   const rankedProjects = useMemo(
-    () => rankProjects(displayedProjects, threads, settings, projectId),
-    [displayedProjects, projectId, settings, threads],
+    () => rankProjects(displayedProjects, threads, settings, projectId, manualOrder),
+    [displayedProjects, manualOrder, projectId, settings, threads],
   );
   const activityByProject = useMemo(
     () => buildNewChatActivityByProject(threads),
@@ -288,6 +300,11 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
   const [renameName, setRenameName] = useState("");
   const [renameError, setRenameError] = useState<string | null>(null);
   const [isRenaming, setIsRenaming] = useState(false);
+  const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<{
+    projectId: string;
+    position: "after" | "before";
+  } | null>(null);
   const [pinnedIds, setPinnedIds] = useState<readonly string[]>([]);
   useEffect(() => {
     let cancelled = false;
@@ -351,12 +368,46 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
 
   function changeRankingMode(value: string): void {
     const next = parseRankingMode(value);
+    if (next === "Manual" && manualOrder.length === 0) {
+      saveManualOrder(rankedProjects.map((project) => project.id));
+    }
     setRankingMode(next);
     try {
       window.localStorage.setItem(RANKING_STORAGE_KEY, next);
     } catch {
       // Browser storage can be unavailable; sorting still works for this page.
     }
+  }
+
+  function saveManualOrder(projectIds: readonly string[]): void {
+    setManualOrder(projectIds);
+    try {
+      window.localStorage.setItem(MANUAL_ORDER_STORAGE_KEY, JSON.stringify(projectIds));
+    } catch {
+      // Browser storage can be unavailable; dragging still works for this page.
+    }
+  }
+
+  function reorderProject(
+    sourceId: string,
+    targetId: string,
+    position: "after" | "before",
+  ): void {
+    if (sourceId === targetId) return;
+    const sourceIsPinned = pinnedIds.includes(sourceId);
+    if (sourceIsPinned !== pinnedIds.includes(targetId)) return;
+
+    const orderedIds = rankedProjects.map((project) => project.id);
+    const sourceIndex = orderedIds.indexOf(sourceId);
+    if (sourceIndex === -1 || !orderedIds.includes(targetId)) return;
+
+    const [movedId] = orderedIds.splice(sourceIndex, 1);
+    const targetIndex = orderedIds.indexOf(targetId);
+    orderedIds.splice(position === "after" ? targetIndex + 1 : targetIndex, 0, movedId!);
+
+    const visibleIds = new Set(orderedIds);
+    const hiddenIds = manualOrder.filter((id) => !visibleIds.has(id));
+    saveManualOrder([...orderedIds, ...hiddenIds]);
   }
 
   function togglePin(targetId: string, pinned: boolean): void {
@@ -414,9 +465,12 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
     );
   }
 
-  const pinnedProjects = pinnedIds
-    .map((id) => rankedProjects.find((project) => project.id === id))
-    .filter((project): project is RankedProject => project !== undefined);
+  const pinnedProjects =
+    rankingMode === "Manual"
+      ? rankedProjects.filter((project) => pinnedIds.includes(project.id))
+      : pinnedIds
+          .map((id) => rankedProjects.find((project) => project.id === id))
+          .filter((project): project is RankedProject => project !== undefined);
   const unpinnedProjects = rankedProjects.filter(
     (project) => !pinnedIds.includes(project.id),
   );
@@ -425,10 +479,14 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
     const isCurrent = project.id === projectId;
     const isPinned = pinnedIds.includes(project.id);
     const isEditing = renameTarget?.id === project.id;
+    const isManual = rankingMode === "Manual";
+    const isDragging = draggedProjectId === project.id;
     const activity = activityByProject.get(project.id) ?? [];
     const className = [
       "flex w-full min-w-0 items-center gap-3 rounded-lg border bg-card px-4 py-3 text-left transition-colors group-hover:border-foreground/20 group-hover:bg-state-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
       isCurrent ? "border-ring bg-state-hover" : "border-border",
+      isManual && !isEditing ? "cursor-grab active:cursor-grabbing" : "",
+      isDragging ? "opacity-50" : "",
     ].join(" ");
 
     const menuItemClassName =
@@ -514,7 +572,71 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
     return (
       <ContextMenu.Root key={project.id}>
         <ContextMenu.Trigger asChild disabled={isEditing}>
-          <div className="group relative">
+          <div
+            className="group relative"
+            data-project-id={project.id}
+            draggable={isManual && !isEditing}
+            onDragStart={(event) => {
+              if (!isManual || isEditing) return;
+              event.dataTransfer.effectAllowed = "move";
+              event.dataTransfer.setData("text/plain", project.id);
+              setDraggedProjectId(project.id);
+            }}
+            onDragOver={(event) => {
+              if (!draggedProjectId || draggedProjectId === project.id) return;
+              if (isPinned !== pinnedIds.includes(draggedProjectId)) return;
+              event.preventDefault();
+              event.dataTransfer.dropEffect = "move";
+              const bounds = event.currentTarget.getBoundingClientRect();
+              setDropTarget({
+                projectId: project.id,
+                position: event.clientY < bounds.top + bounds.height / 2 ? "before" : "after",
+              });
+            }}
+            onDragLeave={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                setDropTarget((current) =>
+                  current?.projectId === project.id ? null : current,
+                );
+              }
+            }}
+            onDrop={(event) => {
+              event.preventDefault();
+              if (draggedProjectId && dropTarget?.projectId === project.id) {
+                reorderProject(draggedProjectId, project.id, dropTarget.position);
+              }
+              setDraggedProjectId(null);
+              setDropTarget(null);
+            }}
+            onDragEnd={() => {
+              setDraggedProjectId(null);
+              setDropTarget(null);
+            }}
+          >
+            {isDragging ? (
+              <span
+                aria-hidden="true"
+                data-drag-handle=""
+                className="pointer-events-none absolute left-1 top-1/2 z-20 flex w-3 -translate-y-1/2 items-center justify-center text-muted-foreground"
+              >
+                <svg viewBox="0 0 12 16" fill="none" className="h-4 w-3">
+                  <path
+                    d="M3.5 4h.01M8.5 4h.01M3.5 8h.01M8.5 8h.01M3.5 12h.01M8.5 12h.01"
+                    stroke="currentColor"
+                    strokeWidth="2.2"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </span>
+            ) : null}
+            {dropTarget?.projectId === project.id ? (
+              <span
+                aria-hidden="true"
+                className={`pointer-events-none absolute left-2 right-2 z-20 h-0.5 rounded-full bg-primary ${
+                  dropTarget.position === "before" ? "-top-1" : "-bottom-1"
+                }`}
+              />
+            ) : null}
             {isEditing ? (
               <div className={className}>{cardContent}</div>
             ) : (
@@ -640,6 +762,24 @@ function readRankingMode(): RankingMode {
     return parseRankingMode(window.localStorage.getItem(RANKING_STORAGE_KEY));
   } catch {
     return parseRankingMode(undefined);
+  }
+}
+
+function readManualOrder(): readonly string[] {
+  try {
+    const stored: unknown = JSON.parse(
+      window.localStorage.getItem(MANUAL_ORDER_STORAGE_KEY) ?? "[]",
+    );
+    if (!Array.isArray(stored)) return [];
+
+    const uniqueIds = new Set<string>();
+    for (const value of stored) {
+      if (typeof value === "string" && value.length > 0) uniqueIds.add(value);
+      if (uniqueIds.size === 1_000) break;
+    }
+    return [...uniqueIds];
+  } catch {
+    return [];
   }
 }
 

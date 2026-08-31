@@ -2,6 +2,7 @@ export const RANKING_OPTIONS = [
   "Recent activity",
   "Most chats",
   "Alphabetical",
+  "Manual",
 ] as const;
 
 export type RankingMode = (typeof RANKING_OPTIONS)[number];

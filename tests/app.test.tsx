@@ -363,6 +363,87 @@ describe("project chat launcher", () => {
     slot.lifecycle.unmount();
   });
 
+  it("persists manual ordering after drag and drop", async () => {
+    const app = await loadPluginApp(() => import("../app"));
+    const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {
+      sidebarThreads: {
+        projects: [
+          { id: "alpha", name: "Alpha", isPersonal: false },
+          { id: "beta", name: "Beta", isPersonal: false },
+          { id: "gamma", name: "Gamma", isPersonal: false },
+        ],
+        threads: [],
+      },
+    });
+
+    fireEvent.change(slot.getByLabelText("Sort projects"), {
+      target: { value: "Manual" },
+    });
+
+    const dataTransfer = {
+      dropEffect: "none",
+      effectAllowed: "none",
+      setData: () => {},
+    };
+    const gamma = slot
+      .getByRole("button", { name: "Start a new chat in Gamma" })
+      .closest<HTMLElement>("[data-project-id]");
+    const alpha = slot
+      .getByRole("button", { name: "Start a new chat in Alpha" })
+      .closest<HTMLElement>("[data-project-id]");
+    expect(gamma?.draggable).toBe(true);
+    expect(alpha?.draggable).toBe(true);
+    expect(slot.container.querySelector("[data-drag-handle]")).toBeNull();
+
+    fireEvent.dragStart(gamma!, { dataTransfer });
+    expect(gamma?.querySelector("[data-drag-handle]")).not.toBeNull();
+    fireEvent.dragOver(alpha!, { clientY: -1, dataTransfer });
+    fireEvent.drop(alpha!, { dataTransfer });
+    expect(slot.container.querySelector("[data-drag-handle]")).toBeNull();
+
+    expect(
+      slot
+        .getAllByRole("button", { name: /Start a new chat/ })
+        .map((button) => button.getAttribute("aria-label")),
+    ).toEqual([
+      "Start a new chat in Alpha",
+      "Start a new chat in Gamma",
+      "Start a new chat in Beta",
+    ]);
+    expect(
+      JSON.parse(
+        window.localStorage.getItem("bb-plugin-homepage:manual-project-order") ?? "[]",
+      ),
+    ).toEqual(["alpha", "gamma", "beta"]);
+    expect(window.localStorage.getItem("bb-plugin-homepage:ranking-mode"))
+      .toBe("Manual");
+
+    slot.lifecycle.unmount();
+
+    const restored = renderSlot(app.homepageSections[0]!, { projectId: null }, {
+      sidebarThreads: {
+        projects: [
+          { id: "alpha", name: "Alpha", isPersonal: false },
+          { id: "beta", name: "Beta", isPersonal: false },
+          { id: "gamma", name: "Gamma", isPersonal: false },
+        ],
+        threads: [],
+      },
+    });
+    expect((restored.getByLabelText("Sort projects") as HTMLSelectElement).value)
+      .toBe("Manual");
+    expect(
+      restored
+        .getAllByRole("button", { name: /Start a new chat/ })
+        .map((button) => button.getAttribute("aria-label")),
+    ).toEqual([
+      "Start a new chat in Alpha",
+      "Start a new chat in Gamma",
+      "Start a new chat in Beta",
+    ]);
+    restored.lifecycle.unmount();
+  });
+
   it("keeps the homepage ordering choice in browser storage", async () => {
     window.localStorage.setItem("bb-plugin-homepage:ranking-mode", "Most chats");
     const app = await loadPluginApp(() => import("../app"));
