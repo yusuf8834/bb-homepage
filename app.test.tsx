@@ -241,7 +241,7 @@ describe("project chat launcher", () => {
       name: "Busy: 2 new chats in the last 14 days",
     });
     expect(sparkline.querySelectorAll("path")).toHaveLength(2);
-    expect(sparkline.querySelectorAll("circle")).toHaveLength(0);
+    expect(sparkline.querySelectorAll("circle")).toHaveLength(1);
     expect(slot.queryByRole("img", { name: /^Idle:/ })).toBeNull();
     expect(slot.container.querySelectorAll('svg[viewBox="0 0 16 16"]')).toHaveLength(4);
 

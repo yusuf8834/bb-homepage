@@ -184,7 +184,7 @@ function NewChatSparkline({
   const total = activity.reduce((sum, count) => sum + count, 0);
   if (total === 0 || activity.length < 2) return null;
 
-  const width = 100;
+  const width = 72;
   const height = 24;
   const baseline = height - 2;
   const chartTop = 3;
@@ -194,21 +194,18 @@ function NewChatSparkline({
     y: baseline - (count / maximum) * (baseline - chartTop),
   }));
   const line = buildSmoothLinePath(points, chartTop, baseline);
-  const area = `${line} L ${width} ${height} L 0 ${height} Z`;
+  const area = `${line} L ${width} ${baseline} L 0 ${baseline} Z`;
   const label = `${projectName}: ${total} new chat${total === 1 ? "" : "s"} in the last 14 days`;
+  const latest = points.at(-1)!;
 
   return (
-    <span
-      className="pointer-events-none absolute inset-x-0 bottom-0 -z-10 h-6"
-      title={label}
-    >
+    <span className="shrink-0" title={label}>
       <svg
         role="img"
         aria-label={label}
         viewBox={`0 0 ${width} ${height}`}
-        preserveAspectRatio="none"
-        className="h-full w-full text-primary/75 transition-colors group-hover:text-primary [transition:clip-path_500ms_ease-out,color_150ms] motion-reduce:transition-none"
-        style={{ clipPath: drawn ? "inset(0)" : "inset(0 100% 0 0)" }}
+        className="h-6 w-[72px] overflow-visible text-primary/70 transition-colors group-hover:text-primary [transition:clip-path_500ms_ease-out,color_150ms] motion-reduce:transition-none"
+        style={{ clipPath: drawn ? "inset(-4px)" : "inset(-4px 100% -4px -4px)" }}
       >
         <path d={area} fill="currentColor" fillOpacity="0.1" />
         <path
@@ -220,6 +217,7 @@ function NewChatSparkline({
           strokeLinejoin="round"
           vectorEffect="non-scaling-stroke"
         />
+        <circle cx={latest.x} cy={latest.y} r="1.75" fill="currentColor" />
       </svg>
     </span>
   );
@@ -328,7 +326,7 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
     const isPinned = pinnedIds.includes(project.id);
     const activity = activityByProject.get(project.id) ?? [];
     const className = [
-      "relative isolate flex w-full min-w-0 items-center gap-3 overflow-hidden rounded-lg border bg-card px-4 py-3 text-left transition-colors group-hover:border-foreground/20 group-hover:bg-state-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+      "flex w-full min-w-0 items-center gap-3 rounded-lg border bg-card px-4 py-3 text-left transition-colors group-hover:border-foreground/20 group-hover:bg-state-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
       isCurrent ? "border-ring bg-state-hover" : "border-border",
     ].join(" ");
 
@@ -366,7 +364,6 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
                 ) : null}
               </span>
               <NewChatSparkline projectName={project.name} activity={activity} />
-              <span aria-hidden="true" className="w-6 shrink-0" />
               <span
                 aria-hidden="true"
                 className="flex size-6 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors group-hover:border-primary group-hover:text-primary"
@@ -385,7 +382,7 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
               type="button"
               aria-label={isPinned ? `Unpin ${project.name}` : `Pin ${project.name}`}
               aria-pressed={isPinned}
-              className="absolute right-[52px] top-1/2 z-10 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring group-hover:opacity-100"
+              className="absolute right-[52px] top-1/2 z-10 flex size-6 -translate-y-1/2 items-center justify-center rounded-md border border-border bg-card text-muted-foreground opacity-0 shadow-sm transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring group-hover:opacity-100"
               onClick={() => togglePin(project.id, !isPinned)}
             >
               <svg
