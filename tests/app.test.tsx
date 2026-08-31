@@ -122,7 +122,7 @@ describe("project chat launcher", () => {
     ]);
   });
 
-  it("ranks active root chats by count and opens the selected project", async () => {
+  it("keeps recent-activity order while highlighting and opening the selected project", async () => {
     const app = await loadPluginApp(() => import("../app"));
     const slot = renderSlot(app.homepageSections[0]!, { projectId: "project-2" }, {
       sidebarThreads: {
@@ -146,8 +146,8 @@ describe("project chat launcher", () => {
       year: "numeric",
     });
     expect(slot.getAllByRole("button", { name: /Start a new chat/ }).map((button) => button.textContent)).toEqual([
-      `Often2 chats · ${epochMonth}`,
       `Once1 chat · ${epochMonth}`,
+      `Often2 chats · ${epochMonth}`,
       "UnusedNo chats yet",
     ]);
     expect(slot.getByRole("button", { name: "Start a new chat in Often" }).getAttribute("aria-current"))
@@ -158,11 +158,16 @@ describe("project chat launcher", () => {
     expect(slot.container.querySelector("[data-homepage-sort]")?.className)
       .toContain("absolute -top-9 right-0");
 
-    fireEvent.click(slot.getByRole("button", { name: "Start a new chat in Once" }));
+    const onceButton = slot.getByRole("button", {
+      name: "Start a new chat in Once",
+    });
+    fireEvent.click(onceButton);
     expect(slot.inspection.sidebarActionCalls).toContainEqual({
       method: "openNewThread",
       options: { projectId: "project-1", focusPrompt: true },
     });
+    expect(onceButton.getAttribute("aria-current")).toBe("page");
+    expect(onceButton.className).toContain("bg-state-hover");
 
     slot.lifecycle.unmount();
   });
@@ -445,7 +450,6 @@ describe("project chat launcher", () => {
     const app = await loadPluginApp(() => import("../app"));
     const slot = renderSlot(app.homepageSections[0]!, { projectId: "unused" }, {
       settings: {
-        currentProjectFirst: false,
         showChatCounts: false,
         showUnusedProjects: false,
         includePersonalProject: false,
@@ -480,10 +484,12 @@ describe("project chat launcher", () => {
     slot.lifecycle.unmount();
   });
 
-  it("supports alphabetical ordering while keeping the current project first", async () => {
+  it("sorts alphabetically while highlighting the composer project", async () => {
     const app = await loadPluginApp(() => import("../app"));
-    const slot = renderSlot(app.homepageSections[0]!, { projectId: "zulu" }, {
-      settings: { currentProjectFirst: true },
+    const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {
+      composer: {
+        scope: { kind: "new-thread", projectId: "zulu" },
+      },
       sidebarThreads: {
         projects: [
           { id: "zulu", name: "Zulu", isPersonal: false },
@@ -499,10 +505,21 @@ describe("project chat launcher", () => {
     });
 
     expect(slot.getAllByRole("button", { name: /Start a new chat/ }).map((button) => button.getAttribute("aria-label"))).toEqual([
-      "Start a new chat in Zulu",
       "Start a new chat in Alpha",
       "Start a new chat in Beta",
+      "Start a new chat in Zulu",
     ]);
+    const zulu = slot.getByRole("button", { name: "Start a new chat in Zulu" });
+    expect(zulu.getAttribute("aria-current")).toBe("page");
+    expect(zulu.className).toContain("bg-state-hover");
+
+    await slot.behavior.setComposerScope({
+      kind: "new-thread",
+      projectId: "beta",
+    });
+    expect(slot.getByRole("button", { name: "Start a new chat in Beta" }).getAttribute("aria-current"))
+      .toBe("page");
+    expect(zulu.getAttribute("aria-current")).toBeNull();
     slot.lifecycle.unmount();
   });
 

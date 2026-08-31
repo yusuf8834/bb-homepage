@@ -112,8 +112,10 @@ describe("project icon route", () => {
     plugin(bb);
 
     expect(harness.inspection.registrations.settingsDescriptors.rankingMode).toBeUndefined();
+    expect(
+      harness.inspection.registrations.settingsDescriptors.currentProjectFirst,
+    ).toBeUndefined();
     expect(harness.inspection.registrations.settingsDescriptors).toMatchObject({
-      currentProjectFirst: { type: "boolean", default: true },
       showChatCounts: { type: "boolean", default: true },
       showUnusedProjects: { type: "boolean", default: true },
       includePersonalProject: { type: "boolean", default: true },

@@ -42,12 +42,6 @@ export const rpcContract = defineRpcContract({
 
 export default function plugin(bb: BbPluginApi) {
   bb.settings.define({
-    currentProjectFirst: {
-      type: "boolean",
-      label: "Current project first",
-      description: "Keep the currently selected project at the top.",
-      default: true,
-    },
     showChatCounts: {
       type: "boolean",
       label: "Show chat counts",

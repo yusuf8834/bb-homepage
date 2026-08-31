@@ -9,7 +9,6 @@ export type RankingMode = (typeof RANKING_OPTIONS)[number];
 
 export interface HomepageSettings {
   rankingMode: RankingMode;
-  currentProjectFirst: boolean;
   showChatCounts: boolean;
   showUnusedProjects: boolean;
   includePersonalProject: boolean;
@@ -20,7 +19,6 @@ export type HomepagePluginSettings = Omit<HomepageSettings, "rankingMode">;
 
 const DEFAULT_HOMEPAGE_SETTINGS: HomepageSettings = {
   rankingMode: "Recent activity",
-  currentProjectFirst: true,
   showChatCounts: true,
   showUnusedProjects: true,
   includePersonalProject: true,
@@ -31,7 +29,6 @@ export function parseHomepageSettings(
   values: Record<string, string | boolean> | undefined,
 ): HomepagePluginSettings {
   return {
-    currentProjectFirst: booleanSetting(values, "currentProjectFirst"),
     showChatCounts: booleanSetting(values, "showChatCounts"),
     showUnusedProjects: booleanSetting(values, "showUnusedProjects"),
     includePersonalProject: booleanSetting(values, "includePersonalProject"),

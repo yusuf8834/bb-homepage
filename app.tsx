@@ -4,6 +4,7 @@ import {
   definePluginApp,
   experimental_useSidebarThreadActions,
   experimental_useSidebarThreads,
+  useComposer,
   useRealtime,
   useRpc,
   useSettings,
@@ -60,7 +61,6 @@ function rankProjects(
   projects: readonly PluginSidebarProject[],
   threads: readonly PluginSidebarThread[],
   settings: HomepageSettings,
-  currentProjectId: string | null,
   manualOrder: readonly string[],
 ): RankedProject[] {
   const usage = new Map<string, { chatCount: number; lastUsedAt: number }>();
@@ -86,12 +86,6 @@ function rankProjects(
     .filter((project) => settings.includePersonalProject || !project.isPersonal)
     .filter((project) => settings.showUnusedProjects || project.chatCount > 0)
     .sort((left, right) => {
-      if (settings.currentProjectFirst && settings.rankingMode !== "Manual") {
-        const currentOrder =
-          Number(right.id === currentProjectId) - Number(left.id === currentProjectId);
-        if (currentOrder !== 0) return currentOrder;
-      }
-
       if (settings.rankingMode === "Manual") {
         const leftPosition = manualPositions.get(left.id) ?? Number.MAX_SAFE_INTEGER;
         const rightPosition = manualPositions.get(right.id) ?? Number.MAX_SAFE_INTEGER;
@@ -333,6 +327,14 @@ function HiddenProjectsSettings() {
 function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
   const { status, projects, threads } = experimental_useSidebarThreads();
   const actions = experimental_useSidebarThreadActions();
+  const composer = useComposer();
+  const composerProjectId =
+    composer.scope.kind === "new-thread" ? composer.scope.projectId : null;
+  const [lastClickedProjectId, setLastClickedProjectId] = useState<string | null>(null);
+  useEffect(() => {
+    setLastClickedProjectId(null);
+  }, [composerProjectId, projectId]);
+  const activeProjectId = lastClickedProjectId ?? composerProjectId ?? projectId;
   const settingsState = useSettings();
   const pluginSettings = useMemo(
     () => parseHomepageSettings(settingsState.values),
@@ -359,8 +361,8 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
     [hiddenIds, projectNameOverrides, projects],
   );
   const rankedProjects = useMemo(
-    () => rankProjects(displayedProjects, threads, settings, projectId, manualOrder),
-    [displayedProjects, manualOrder, projectId, settings, threads],
+    () => rankProjects(displayedProjects, threads, settings, manualOrder),
+    [displayedProjects, manualOrder, settings, threads],
   );
   const activityByProject = useMemo(
     () => buildNewChatActivityByProject(threads),
@@ -710,7 +712,7 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
       pinnedIds.includes(draggedProjectId));
 
   function renderProject(project: RankedProject) {
-    const isCurrent = project.id === projectId;
+    const isCurrent = project.id === activeProjectId;
     const isPinned = pinnedIds.includes(project.id);
     const isEditing = renameTarget?.id === project.id;
     const isManual = rankingMode === "Manual";
@@ -718,7 +720,7 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
     const activity = activityByProject.get(project.id) ?? [];
     const className = [
       "flex w-full min-w-0 items-center gap-3 rounded-lg border bg-card px-4 py-3 text-left transition-colors group-hover:border-foreground/20 group-hover:bg-state-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-      isCurrent ? "border-ring bg-state-hover" : "border-border",
+      isCurrent ? "border-foreground/20 bg-state-hover" : "border-border",
       isManual && !isEditing ? "cursor-grab active:cursor-grabbing" : "",
       isDragging ? "opacity-50" : "",
     ].join(" ");
@@ -889,6 +891,7 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
                     suppressClickRef.current = null;
                     return;
                   }
+                  setLastClickedProjectId(project.id);
                   actions.openNewThread({ projectId: project.id, focusPrompt: true })
                 }}
               >
@@ -901,9 +904,10 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
           <ContextMenu.Content className="z-50 min-w-[10rem] rounded-md border border-border bg-card p-1 shadow-md">
             <ContextMenu.Item
               className={menuItemClassName}
-              onSelect={() =>
+              onSelect={() => {
+                setLastClickedProjectId(project.id);
                 actions.openNewThread({ projectId: project.id, focusPrompt: true })
-              }
+              }}
             >
               New chat
             </ContextMenu.Item>
