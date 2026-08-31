@@ -48,7 +48,28 @@ function thread(id: string, projectId: string, updatedAt: number) {
 afterEach(() => {
   document.body.innerHTML = "";
   window.localStorage.clear();
+  Reflect.deleteProperty(document, "elementFromPoint");
 });
+
+function pointAt(element: Element): void {
+  Object.defineProperty(document, "elementFromPoint", {
+    configurable: true,
+    value: () => element,
+  });
+}
+
+function firePointer(
+  element: Element,
+  type: "pointercancel" | "pointerdown" | "pointermove" | "pointerup",
+  init: MouseEventInit & { pointerId: number },
+): void {
+  const event = new MouseEvent(type, { bubbles: true, cancelable: true, ...init });
+  Object.defineProperties(event, {
+    isPrimary: { value: true },
+    pointerId: { value: init.pointerId },
+  });
+  fireEvent(element, event);
+}
 
 describe("project chat launcher", () => {
   it("hides the main-page recent chats section and cleans up on disposal", async () => {
@@ -146,7 +167,7 @@ describe("project chat launcher", () => {
     slot.lifecycle.unmount();
   });
 
-  it("renders pinned projects in their own section and toggles pins", async () => {
+  it("renders pinned projects without hover pin controls", async () => {
     const app = await loadPluginApp(() => import("../app"));
     const pinHandlers: PluginRpcTestHandlers<typeof rpcContract> = {
       listPinnedProjects: () => ({ projectIds: ["beta"] }),
@@ -172,16 +193,76 @@ describe("project chat launcher", () => {
         .getAllByRole("button", { name: /Start a new chat/ })
         .map((button) => button.getAttribute("aria-label")),
     ).toEqual(["Start a new chat in Beta", "Start a new chat in Alpha"]);
-    expect(slot.getByRole("button", { name: "Unpin Beta" }).getAttribute("aria-pressed"))
-      .toBe("true");
+    expect(slot.queryByRole("button", { name: /pin beta/i })).toBeNull();
+    expect(slot.queryByRole("button", { name: /pin alpha/i })).toBeNull();
 
-    fireEvent.click(slot.getByRole("button", { name: "Unpin Beta" }));
-    await slot.findByRole("button", { name: "Pin Beta" });
-    expect(slot.queryByText("Pinned")).toBeNull();
-    expect(slot.inspection.rpcCalls).toContainEqual({
-      method: "setProjectPinned",
-      input: { projectId: "beta", pinned: false },
+    slot.lifecycle.unmount();
+  });
+
+  it("pins a project dropped into the pinned section", async () => {
+    window.localStorage.setItem("bb-plugin-homepage:ranking-mode", "Manual");
+    const app = await loadPluginApp(() => import("../app"));
+    const rpcHandlers: PluginRpcTestHandlers<typeof rpcContract> = {
+      listPinnedProjects: () => ({ projectIds: [] }),
+      setProjectPinned: ({ projectId, pinned }) => ({
+        projectIds: pinned ? [projectId] : [],
+      }),
+      renameProject: ({ projectId, name }) => ({ projectId, name }),
+    };
+    const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {
+      rpc: rpcHandlers,
+      sidebarThreads: {
+        projects: [{ id: "alpha", name: "Alpha", isPersonal: false }],
+        threads: [],
+      },
     });
+    await waitFor(() => expect(slot.queryByText("Pinned")).toBeNull());
+
+    const alpha = slot
+      .getByRole("button", { name: "Start a new chat in Alpha" })
+      .closest<HTMLElement>("[data-project-id]");
+    pointAt(alpha!);
+    firePointer(alpha!, "pointerdown", {
+      button: 0,
+      clientX: 10,
+      clientY: 100,
+      pointerId: 1,
+    });
+    firePointer(alpha!, "pointermove", {
+      clientX: 10,
+      clientY: 80,
+      pointerId: 1,
+    });
+
+    expect(slot.getByText("Pinned")).not.toBeNull();
+    expect(slot.getByText("Drop here to pin")).not.toBeNull();
+    const pinnedSection = slot.container.querySelector<HTMLElement>(
+      '[data-project-section="pinned"]',
+    );
+    pointAt(pinnedSection!);
+    firePointer(alpha!, "pointermove", {
+      clientX: 10,
+      clientY: 40,
+      pointerId: 1,
+    });
+    expect(pinnedSection?.className).not.toContain("ring-");
+    expect(
+      pinnedSection?.querySelector('[data-section-drop-accent="pinned"]'),
+    ).not.toBeNull();
+    firePointer(alpha!, "pointerup", {
+      clientX: 10,
+      clientY: 40,
+      pointerId: 1,
+    });
+
+    await waitFor(() => {
+      expect(slot.inspection.rpcCalls).toContainEqual({
+        method: "setProjectPinned",
+        input: { projectId: "alpha", pinned: true },
+      });
+      expect(slot.queryByText("Drop here to pin")).toBeNull();
+    });
+    expect(slot.queryByRole("button", { name: /pin alpha/i })).toBeNull();
 
     slot.lifecycle.unmount();
   });
@@ -267,7 +348,7 @@ describe("project chat launcher", () => {
     expect(sparkline.querySelectorAll("path")).toHaveLength(2);
     expect(sparkline.querySelectorAll("circle")).toHaveLength(1);
     expect(slot.queryByRole("img", { name: /^Idle:/ })).toBeNull();
-    expect(slot.container.querySelectorAll('svg[viewBox="0 0 16 16"]')).toHaveLength(4);
+    expect(slot.container.querySelectorAll('svg[viewBox="0 0 16 16"]')).toHaveLength(2);
 
     slot.lifecycle.unmount();
   });
@@ -380,41 +461,58 @@ describe("project chat launcher", () => {
       target: { value: "Manual" },
     });
 
-    const dataTransfer = {
-      dropEffect: "none",
-      effectAllowed: "none",
-      setData: () => {},
-    };
     const gamma = slot
       .getByRole("button", { name: "Start a new chat in Gamma" })
       .closest<HTMLElement>("[data-project-id]");
     const alpha = slot
       .getByRole("button", { name: "Start a new chat in Alpha" })
       .closest<HTMLElement>("[data-project-id]");
-    expect(gamma?.draggable).toBe(true);
-    expect(alpha?.draggable).toBe(true);
+    expect(gamma?.draggable).toBe(false);
+    expect(alpha?.draggable).toBe(false);
     expect(slot.container.querySelector("[data-drag-handle]")).toBeNull();
 
-    fireEvent.dragStart(gamma!, { dataTransfer });
+    pointAt(alpha!);
+    Object.defineProperty(alpha, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({ top: 100, height: 40 }),
+    });
+    firePointer(gamma!, "pointerdown", {
+      button: 0,
+      clientX: 20,
+      clientY: 200,
+      pointerId: 1,
+    });
+    firePointer(gamma!, "pointermove", {
+      clientX: 20,
+      clientY: 90,
+      pointerId: 1,
+    });
     expect(gamma?.querySelector("[data-drag-handle]")).not.toBeNull();
-    fireEvent.dragOver(alpha!, { clientY: -1, dataTransfer });
-    fireEvent.drop(alpha!, { dataTransfer });
+    firePointer(gamma!, "pointerup", {
+      clientX: 20,
+      clientY: 90,
+      pointerId: 1,
+    });
+    fireEvent.click(
+      slot.getByRole("button", { name: "Start a new chat in Gamma" }),
+    );
     expect(slot.container.querySelector("[data-drag-handle]")).toBeNull();
+    expect(slot.inspection.sidebarActionCalls).toEqual([]);
 
     expect(
       slot
         .getAllByRole("button", { name: /Start a new chat/ })
         .map((button) => button.getAttribute("aria-label")),
     ).toEqual([
-      "Start a new chat in Alpha",
       "Start a new chat in Gamma",
+      "Start a new chat in Alpha",
       "Start a new chat in Beta",
     ]);
     expect(
       JSON.parse(
         window.localStorage.getItem("bb-plugin-homepage:manual-project-order") ?? "[]",
       ),
-    ).toEqual(["alpha", "gamma", "beta"]);
+    ).toEqual(["gamma", "alpha", "beta"]);
     expect(window.localStorage.getItem("bb-plugin-homepage:ranking-mode"))
       .toBe("Manual");
 
@@ -437,11 +535,46 @@ describe("project chat launcher", () => {
         .getAllByRole("button", { name: /Start a new chat/ })
         .map((button) => button.getAttribute("aria-label")),
     ).toEqual([
-      "Start a new chat in Alpha",
       "Start a new chat in Gamma",
+      "Start a new chat in Alpha",
       "Start a new chat in Beta",
     ]);
     restored.lifecycle.unmount();
+  });
+
+  it("still opens a project when a manual-mode pointer press does not move", async () => {
+    window.localStorage.setItem("bb-plugin-homepage:ranking-mode", "Manual");
+    const app = await loadPluginApp(() => import("../app"));
+    const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {
+      sidebarThreads: {
+        projects: [{ id: "alpha", name: "Alpha", isPersonal: false }],
+        threads: [],
+      },
+    });
+    const button = slot.getByRole("button", {
+      name: "Start a new chat in Alpha",
+    });
+    const card = button.closest<HTMLElement>("[data-project-id]");
+
+    firePointer(card!, "pointerdown", {
+      button: 0,
+      clientX: 20,
+      clientY: 20,
+      pointerId: 1,
+    });
+    firePointer(card!, "pointerup", {
+      button: 0,
+      clientX: 20,
+      clientY: 20,
+      pointerId: 1,
+    });
+    fireEvent.click(button);
+
+    expect(slot.inspection.sidebarActionCalls).toContainEqual({
+      method: "openNewThread",
+      options: { projectId: "alpha", focusPrompt: true },
+    });
+    slot.lifecycle.unmount();
   });
 
   it("keeps the homepage ordering choice in browser storage", async () => {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import {
   definePluginApp,
@@ -41,6 +41,19 @@ interface RenameTarget {
 interface ProjectNameOverride {
   name: string;
   previousName: string;
+}
+
+interface ProjectDropTarget {
+  projectId: string;
+  position: "after" | "before";
+}
+
+interface PointerDragGesture {
+  projectId: string;
+  pointerId: number;
+  startX: number;
+  startY: number;
+  started: boolean;
 }
 
 function rankProjects(
@@ -164,6 +177,7 @@ function ProjectIcon({
           alt=""
           className="size-5 object-contain"
           decoding="async"
+          draggable={false}
           loading="lazy"
           src={`${PROJECT_ICON_URL}?projectId=${encodeURIComponent(projectId)}`}
           onError={() => setShowFallback(true)}
@@ -301,10 +315,14 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
   const [renameError, setRenameError] = useState<string | null>(null);
   const [isRenaming, setIsRenaming] = useState(false);
   const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
-  const [dropTarget, setDropTarget] = useState<{
-    projectId: string;
-    position: "after" | "before";
-  } | null>(null);
+  const [dropTarget, setDropTarget] = useState<ProjectDropTarget | null>(null);
+  const [sectionDropTarget, setSectionDropTarget] = useState<
+    "pinned" | "unpinned" | null
+  >(null);
+  const pointerDragRef = useRef<PointerDragGesture | null>(null);
+  const dropTargetRef = useRef<ProjectDropTarget | null>(null);
+  const sectionDropTargetRef = useRef<"pinned" | "unpinned" | null>(null);
+  const suppressClickRef = useRef<string | null>(null);
   const [pinnedIds, setPinnedIds] = useState<readonly string[]>([]);
   useEffect(() => {
     let cancelled = false;
@@ -388,15 +406,12 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
     }
   }
 
-  function reorderProject(
+  function moveProjectInManualOrder(
     sourceId: string,
     targetId: string,
     position: "after" | "before",
   ): void {
     if (sourceId === targetId) return;
-    const sourceIsPinned = pinnedIds.includes(sourceId);
-    if (sourceIsPinned !== pinnedIds.includes(targetId)) return;
-
     const orderedIds = rankedProjects.map((project) => project.id);
     const sourceIndex = orderedIds.indexOf(sourceId);
     if (sourceIndex === -1 || !orderedIds.includes(targetId)) return;
@@ -410,11 +425,124 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
     saveManualOrder([...orderedIds, ...hiddenIds]);
   }
 
+  function reorderProject(
+    sourceId: string,
+    targetId: string,
+    position: "after" | "before",
+  ): void {
+    if (pinnedIds.includes(sourceId) !== pinnedIds.includes(targetId)) return;
+    moveProjectInManualOrder(sourceId, targetId, position);
+  }
+
   function togglePin(targetId: string, pinned: boolean): void {
     void rpc.call("setProjectPinned", { projectId: targetId, pinned }).then(
       ({ projectIds }) => setPinnedIds(projectIds),
       () => {},
     );
+  }
+
+  function updateDropTarget(next: ProjectDropTarget | null): void {
+    dropTargetRef.current = next;
+    setDropTarget(next);
+  }
+
+  function updateSectionDropTarget(next: "pinned" | "unpinned" | null): void {
+    sectionDropTargetRef.current = next;
+    setSectionDropTarget(next);
+  }
+
+  function clearDragState(): void {
+    pointerDragRef.current = null;
+    dropTargetRef.current = null;
+    sectionDropTargetRef.current = null;
+    setDraggedProjectId(null);
+    setDropTarget(null);
+    setSectionDropTarget(null);
+  }
+
+  function moveProjectToSection(sourceId: string, targetPinned: boolean): void {
+    if (pinnedIds.includes(sourceId) === targetPinned) {
+      return;
+    }
+
+    const destinationProjects = rankedProjects.filter(
+      (project) =>
+        project.id !== sourceId &&
+        pinnedIds.includes(project.id) === targetPinned,
+    );
+    const lastDestination = destinationProjects.at(-1);
+    if (lastDestination) {
+      moveProjectInManualOrder(sourceId, lastDestination.id, "after");
+    }
+    togglePin(sourceId, targetPinned);
+  }
+
+  function updatePointerDropTarget(clientX: number, clientY: number): void {
+    const gesture = pointerDragRef.current;
+    if (!gesture?.started) return;
+
+    const hit = document.elementFromPoint(clientX, clientY) as HTMLElement | null;
+    const targetCard = hit?.closest<HTMLElement>("[data-project-id]") ?? null;
+    if (targetCard) {
+      const targetId = targetCard.dataset.projectId;
+      if (targetId && targetId !== gesture.projectId) {
+        const sourceIsPinned = pinnedIds.includes(gesture.projectId);
+        if (pinnedIds.includes(targetId) === sourceIsPinned) {
+          const bounds = targetCard.getBoundingClientRect();
+          updateDropTarget({
+            projectId: targetId,
+            position:
+              clientY < bounds.top + bounds.height / 2 ? "before" : "after",
+          });
+          updateSectionDropTarget(null);
+          return;
+        }
+      }
+    }
+
+    const targetSection = hit?.closest<HTMLElement>("[data-project-section]");
+    const section = targetSection?.dataset.projectSection;
+    const targetPinned = section === "pinned";
+    if (
+      (section === "pinned" || section === "unpinned") &&
+      pinnedIds.includes(gesture.projectId) !== targetPinned
+    ) {
+      updateDropTarget(null);
+      updateSectionDropTarget(section);
+      return;
+    }
+
+    updateDropTarget(null);
+    updateSectionDropTarget(null);
+  }
+
+  function finishPointerDrag(
+    projectId: string,
+    currentTarget: HTMLElement,
+    pointerId: number,
+  ): void {
+    const gesture = pointerDragRef.current;
+    if (!gesture || gesture.pointerId !== pointerId) return;
+
+    if (gesture.started) {
+      const target = dropTargetRef.current;
+      const targetSection = sectionDropTargetRef.current;
+      if (target) {
+        reorderProject(projectId, target.projectId, target.position);
+      } else if (targetSection) {
+        moveProjectToSection(projectId, targetSection === "pinned");
+      }
+
+      suppressClickRef.current = projectId;
+      window.setTimeout(() => {
+        if (suppressClickRef.current === projectId) suppressClickRef.current = null;
+      }, 0);
+    }
+
+    if (currentTarget.hasPointerCapture?.(pointerId)) {
+      currentTarget.releasePointerCapture(pointerId);
+    }
+    clearDragState();
   }
 
   function startRenaming(project: RankedProject): void {
@@ -474,6 +602,13 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
   const unpinnedProjects = rankedProjects.filter(
     (project) => !pinnedIds.includes(project.id),
   );
+  const isManualDragging = rankingMode === "Manual" && draggedProjectId !== null;
+  const showPinnedSection = pinnedProjects.length > 0 || isManualDragging;
+  const showUnpinnedSection =
+    unpinnedProjects.length > 0 ||
+    (isManualDragging &&
+      draggedProjectId !== null &&
+      pinnedIds.includes(draggedProjectId));
 
   function renderProject(project: RankedProject) {
     const isCurrent = project.id === projectId;
@@ -575,42 +710,47 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
           <div
             className="group relative"
             data-project-id={project.id}
-            draggable={isManual && !isEditing}
-            onDragStart={(event) => {
-              if (!isManual || isEditing) return;
-              event.dataTransfer.effectAllowed = "move";
-              event.dataTransfer.setData("text/plain", project.id);
-              setDraggedProjectId(project.id);
-            }}
-            onDragOver={(event) => {
-              if (!draggedProjectId || draggedProjectId === project.id) return;
-              if (isPinned !== pinnedIds.includes(draggedProjectId)) return;
-              event.preventDefault();
-              event.dataTransfer.dropEffect = "move";
-              const bounds = event.currentTarget.getBoundingClientRect();
-              setDropTarget({
+            onPointerDown={(event) => {
+              if (
+                !isManual ||
+                isEditing ||
+                event.button > 0 ||
+                event.isPrimary === false
+              ) {
+                return;
+              }
+              pointerDragRef.current = {
                 projectId: project.id,
-                position: event.clientY < bounds.top + bounds.height / 2 ? "before" : "after",
-              });
+                pointerId: event.pointerId,
+                startX: event.clientX,
+                startY: event.clientY,
+                started: false,
+              };
+              event.currentTarget.setPointerCapture?.(event.pointerId);
             }}
-            onDragLeave={(event) => {
-              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-                setDropTarget((current) =>
-                  current?.projectId === project.id ? null : current,
+            onPointerMove={(event) => {
+              const gesture = pointerDragRef.current;
+              if (!gesture || gesture.pointerId !== event.pointerId) return;
+              if (!gesture.started) {
+                const distance = Math.hypot(
+                  event.clientX - gesture.startX,
+                  event.clientY - gesture.startY,
                 );
+                if (distance < 6) return;
+                gesture.started = true;
+                setDraggedProjectId(gesture.projectId);
               }
-            }}
-            onDrop={(event) => {
               event.preventDefault();
-              if (draggedProjectId && dropTarget?.projectId === project.id) {
-                reorderProject(draggedProjectId, project.id, dropTarget.position);
-              }
-              setDraggedProjectId(null);
-              setDropTarget(null);
+              updatePointerDropTarget(event.clientX, event.clientY);
             }}
-            onDragEnd={() => {
-              setDraggedProjectId(null);
-              setDropTarget(null);
+            onPointerUp={(event) => {
+              finishPointerDrag(project.id, event.currentTarget, event.pointerId);
+            }}
+            onPointerCancel={(event) => {
+              if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+                event.currentTarget.releasePointerCapture(event.pointerId);
+              }
+              clearDragState();
             }}
           >
             {isDragging ? (
@@ -645,35 +785,17 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
                 className={className}
                 aria-label={`Start a new chat in ${project.name}`}
                 aria-current={isCurrent ? "page" : undefined}
-                onClick={() =>
+                onClick={() => {
+                  if (suppressClickRef.current === project.id) {
+                    suppressClickRef.current = null;
+                    return;
+                  }
                   actions.openNewThread({ projectId: project.id, focusPrompt: true })
-                }
+                }}
               >
                 {cardContent}
               </button>
             )}
-            {!isEditing ? (
-              <button
-                type="button"
-                aria-label={isPinned ? `Unpin ${project.name}` : `Pin ${project.name}`}
-                aria-pressed={isPinned}
-                className="absolute right-[52px] top-1/2 z-10 flex size-6 -translate-y-1/2 items-center justify-center rounded-md border border-border bg-card text-muted-foreground opacity-0 shadow-sm transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring group-hover:opacity-100"
-                onClick={() => togglePin(project.id, !isPinned)}
-              >
-                <svg
-                  viewBox="0 0 16 16"
-                  fill={isPinned ? "currentColor" : "none"}
-                  className="size-3.5"
-                >
-                  <path
-                    d="M4.75 3.25h6.5v9.4a.25.25 0 0 1-.4.2L8 10.55l-2.85 2.3a.25.25 0 0 1-.4-.2z"
-                    stroke="currentColor"
-                    strokeWidth="1.3"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </button>
-            ) : null}
           </div>
         </ContextMenu.Trigger>
         <ContextMenu.Portal>
@@ -728,29 +850,72 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
           </select>
         </label>
       </div>
-      {pinnedProjects.length > 0 ? (
-        <div className="mb-4">
-          <p className="mb-2 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+      {showPinnedSection ? (
+        <div
+          data-project-section="pinned"
+          className="mb-4"
+        >
+          <p
+            className={`mb-2 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider transition-colors ${
+              sectionDropTarget === "pinned"
+                ? "text-primary"
+                : "text-muted-foreground"
+            }`}
+          >
             <svg viewBox="0 0 16 16" fill="currentColor" className="size-3" aria-hidden="true">
               <path d="M4.75 2.5h6.5a.5.5 0 0 1 .5.5v10.15a.25.25 0 0 1-.4.2L8 10.9l-3.35 2.45a.25.25 0 0 1-.4-.2V3a.5.5 0 0 1 .5-.5z" />
             </svg>
-            Pinned
+            <span>Pinned</span>
+            {sectionDropTarget === "pinned" ? (
+              <span
+                aria-hidden="true"
+                data-section-drop-accent="pinned"
+                className="h-px flex-1 bg-primary"
+              />
+            ) : null}
           </p>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {pinnedProjects.map(renderProject)}
-          </div>
+          {pinnedProjects.length > 0 ? (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {pinnedProjects.map(renderProject)}
+            </div>
+          ) : (
+            <div className="rounded-lg border border-dashed border-border px-4 py-3 text-center text-xs text-muted-foreground">
+              Drop here to pin
+            </div>
+          )}
         </div>
       ) : null}
-      {unpinnedProjects.length > 0 ? (
-        <div>
-          {pinnedProjects.length > 0 ? (
-            <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-              All projects
+      {showUnpinnedSection ? (
+        <div
+          data-project-section="unpinned"
+        >
+          {showPinnedSection ? (
+            <p
+              className={`mb-2 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider transition-colors ${
+                sectionDropTarget === "unpinned"
+                  ? "text-primary"
+                  : "text-muted-foreground"
+              }`}
+            >
+              <span>All projects</span>
+              {sectionDropTarget === "unpinned" ? (
+                <span
+                  aria-hidden="true"
+                  data-section-drop-accent="unpinned"
+                  className="h-px flex-1 bg-primary"
+                />
+              ) : null}
             </p>
           ) : null}
-          <div className="grid gap-2 sm:grid-cols-2">
-            {unpinnedProjects.map(renderProject)}
-          </div>
+          {unpinnedProjects.length > 0 ? (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {unpinnedProjects.map(renderProject)}
+            </div>
+          ) : (
+            <div className="rounded-lg border border-dashed border-border px-4 py-3 text-center text-xs text-muted-foreground">
+              Drop here to unpin
+            </div>
+          )}
         </div>
       ) : null}
     </div>
