@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ProjectIconCache } from "./project-icon-cache.js";
+import { ProjectIconCache } from "../src/project-icon-cache.js";
 
 const icon = { bytes: new Uint8Array([1, 2, 3]), mimeType: "image/png" };
 

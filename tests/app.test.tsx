@@ -8,9 +8,9 @@ import {
   renderSlot,
   type PluginRpcTestHandlers,
 } from "@get-bb/plugin-sdk/testing/app";
-import type { rpcContract } from "./server.js";
-import { buildNewChatActivityByProject } from "./activity.js";
-import { formatRelativeTime } from "./relative-time.js";
+import type { rpcContract } from "../server.js";
+import { buildNewChatActivityByProject } from "../src/activity.js";
+import { formatRelativeTime } from "../src/relative-time.js";
 
 function thread(id: string, projectId: string, updatedAt: number) {
   return {
@@ -56,7 +56,7 @@ describe("project chat launcher", () => {
     recents.dataset.rootComposeMobileRecents = "";
     document.body.append(recents);
 
-    const app = await loadPluginApp(() => import("./app"));
+    const app = await loadPluginApp(() => import("../app"));
     const scripts = await mountPluginContentScripts(app, { pluginId: "homepage" });
     const style = document.head.querySelector("style[data-bb-homepage-hide-recents]");
 
@@ -102,7 +102,7 @@ describe("project chat launcher", () => {
   });
 
   it("ranks active root chats by count and opens the selected project", async () => {
-    const app = await loadPluginApp(() => import("./app"));
+    const app = await loadPluginApp(() => import("../app"));
     const slot = renderSlot(app.homepageSections[0]!, { projectId: "project-2" }, {
       sidebarThreads: {
         projects: [
@@ -147,7 +147,7 @@ describe("project chat launcher", () => {
   });
 
   it("renders pinned projects in their own section and toggles pins", async () => {
-    const app = await loadPluginApp(() => import("./app"));
+    const app = await loadPluginApp(() => import("../app"));
     const pinHandlers: PluginRpcTestHandlers<typeof rpcContract> = {
       listPinnedProjects: () => ({ projectIds: ["beta"] }),
       setProjectPinned: ({ projectId, pinned }) => ({
@@ -186,7 +186,7 @@ describe("project chat launcher", () => {
   });
 
   it("wires a context menu trigger onto each project card", async () => {
-    const app = await loadPluginApp(() => import("./app"));
+    const app = await loadPluginApp(() => import("../app"));
     const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {
       rpc: {
         listPinnedProjects: () => ({ projectIds: [] }),
@@ -211,7 +211,7 @@ describe("project chat launcher", () => {
 
   it("shows line sparklines only for projects with recent chats", async () => {
     const now = Date.now();
-    const app = await loadPluginApp(() => import("./app"));
+    const app = await loadPluginApp(() => import("../app"));
     const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {
       sidebarThreads: {
         projects: [
@@ -238,7 +238,7 @@ describe("project chat launcher", () => {
   });
 
   it("uses recent activity and then name to break equal-count ties", async () => {
-    const app = await loadPluginApp(() => import("./app"));
+    const app = await loadPluginApp(() => import("../app"));
     const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {
       sidebarThreads: {
         projects: [
@@ -264,7 +264,7 @@ describe("project chat launcher", () => {
   });
 
   it("applies ranking, visibility, count, and artwork settings", async () => {
-    const app = await loadPluginApp(() => import("./app"));
+    const app = await loadPluginApp(() => import("../app"));
     const slot = renderSlot(app.homepageSections[0]!, { projectId: "unused" }, {
       settings: {
         currentProjectFirst: false,
@@ -303,7 +303,7 @@ describe("project chat launcher", () => {
   });
 
   it("supports alphabetical ordering while keeping the current project first", async () => {
-    const app = await loadPluginApp(() => import("./app"));
+    const app = await loadPluginApp(() => import("../app"));
     const slot = renderSlot(app.homepageSections[0]!, { projectId: "zulu" }, {
       settings: { currentProjectFirst: true },
       sidebarThreads: {
@@ -330,7 +330,7 @@ describe("project chat launcher", () => {
 
   it("keeps the homepage ordering choice in browser storage", async () => {
     window.localStorage.setItem("bb-plugin-homepage:ranking-mode", "Most chats");
-    const app = await loadPluginApp(() => import("./app"));
+    const app = await loadPluginApp(() => import("../app"));
     const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {
       sidebarThreads: {
         projects: [
@@ -360,7 +360,7 @@ describe("project chat launcher", () => {
     ["error", "alert", "Projects could not be loaded."],
     ["ready", "status", "No projects yet."],
   ] as const)("renders the %s state", async (status, role, text) => {
-    const app = await loadPluginApp(() => import("./app"));
+    const app = await loadPluginApp(() => import("../app"));
     const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {
       sidebarThreads: { status, projects: [], threads: [] },
     });
@@ -370,7 +370,7 @@ describe("project chat launcher", () => {
   });
 
   it("uses folder fallbacks for personal projects and failed images", async () => {
-    const app = await loadPluginApp(() => import("./app"));
+    const app = await loadPluginApp(() => import("../app"));
     const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {
       sidebarThreads: {
         projects: [

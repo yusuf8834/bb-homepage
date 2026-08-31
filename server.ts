@@ -1,7 +1,7 @@
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
-import { ProjectIconCache } from "./project-icon-cache.js";
-import { findProjectIcon } from "./project-icons.js";
+import { ProjectIconCache } from "./src/project-icon-cache.js";
+import { findProjectIcon } from "./src/project-icons.js";
 
 const FOUND_CACHE_CONTROL = "private, max-age=300";
 const MISSING_CACHE_CONTROL = "private, max-age=60";

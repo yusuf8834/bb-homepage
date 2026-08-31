@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented here.
 
+## 0.1.1 - 2026-08-30
+
+- Organize implementation helpers and tests into dedicated directories.
+- Align the CI build tool with Plugin SDK 0.4.29.
+
 ## 0.1.0 - 2026-08-30
 
 - Add a homepage launcher that starts a new thread in the selected project.

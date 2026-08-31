@@ -13,8 +13,8 @@ import type {
   PluginSidebarProject,
   PluginSidebarThread,
 } from "@get-bb/plugin-sdk/app";
-import { buildNewChatActivityByProject } from "./activity.js";
-import { formatRelativeTime } from "./relative-time.js";
+import { buildNewChatActivityByProject } from "./src/activity.js";
+import { formatRelativeTime } from "./src/relative-time.js";
 import type { rpcContract } from "./server.js";
 import {
   parseHomepageSettings,
@@ -22,7 +22,7 @@ import {
   RANKING_OPTIONS,
   type HomepageSettings,
   type RankingMode,
-} from "./settings.js";
+} from "./src/settings.js";
 
 const PROJECT_ICON_URL = "/api/v1/plugins/homepage/http/project-icon";
 const RANKING_STORAGE_KEY = "bb-plugin-homepage:ranking-mode";

@@ -6,7 +6,7 @@ import {
   normalizeProjectIconPath,
   projectIconMimeType,
   projectIconScore,
-} from "./project-icons.js";
+} from "../src/project-icons.js";
 
 describe("project icon policy", () => {
   it.each([

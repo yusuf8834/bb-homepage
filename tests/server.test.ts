@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import plugin from "./server.js";
+import plugin from "../server.js";
 
 describe("pinned projects", () => {
   it("persists pin order and drops unpinned projects", async () => {

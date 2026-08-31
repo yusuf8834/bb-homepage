@@ -3,7 +3,7 @@ import { experimental_scanPublicSdkOnly } from "@get-bb/plugin-sdk/testing";
 
 describe("package boundaries", () => {
   it("uses only public SDK imports", async () => {
-    const result = experimental_scanPublicSdkOnly(new URL(".", import.meta.url).pathname, {
+    const result = experimental_scanPublicSdkOnly(new URL("../", import.meta.url).pathname, {
       allow: [
         /^react(?:\/.*)?$/,
         /^saxes$/,
