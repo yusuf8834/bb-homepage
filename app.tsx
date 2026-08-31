@@ -207,17 +207,10 @@ function NewChatSparkline({
         aria-label={label}
         viewBox={`0 0 ${width} ${height}`}
         preserveAspectRatio="none"
-        className="h-full w-full text-primary/75 transition-colors group-hover:text-primary"
+        className="h-full w-full text-primary/75 transition-colors group-hover:text-primary [transition:clip-path_500ms_ease-out,color_150ms] motion-reduce:transition-none"
+        style={{ clipPath: drawn ? "inset(0)" : "inset(0 100% 0 0)" }}
       >
-        <path
-          d={area}
-          fill="currentColor"
-          fillOpacity="0.1"
-          className={[
-            "transition-opacity duration-300 delay-200 motion-reduce:transition-none",
-            drawn ? "opacity-100" : "opacity-0",
-          ].join(" ")}
-        />
+        <path d={area} fill="currentColor" fillOpacity="0.1" />
         <path
           d={line}
           fill="none"
@@ -226,9 +219,6 @@ function NewChatSparkline({
           strokeLinecap="round"
           strokeLinejoin="round"
           vectorEffect="non-scaling-stroke"
-          pathLength={100}
-          className="[transition:stroke-dashoffset_450ms_ease-out] motion-reduce:transition-none"
-          style={{ strokeDasharray: 100, strokeDashoffset: drawn ? 0 : 100 }}
         />
       </svg>
     </span>
