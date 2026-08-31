@@ -323,6 +323,7 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
   const dropTargetRef = useRef<ProjectDropTarget | null>(null);
   const sectionDropTargetRef = useRef<"pinned" | "unpinned" | null>(null);
   const suppressClickRef = useRef<string | null>(null);
+  const sortPointerSelectionRef = useRef(false);
   const [pinnedIds, setPinnedIds] = useState<readonly string[]>([]);
   useEffect(() => {
     let cancelled = false;
@@ -838,9 +839,21 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
           <span>Sort</span>
           <select
             aria-label="Sort projects"
-            className="h-8 rounded-md border border-border bg-card px-2 text-xs text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            className="h-8 rounded-md border border-border bg-card px-2 text-xs text-foreground focus-visible:border-ring focus-visible:outline-none"
             value={rankingMode}
-            onChange={(event) => changeRankingMode(event.target.value)}
+            onPointerDown={() => {
+              sortPointerSelectionRef.current = true;
+            }}
+            onKeyDown={() => {
+              sortPointerSelectionRef.current = false;
+            }}
+            onBlur={() => {
+              sortPointerSelectionRef.current = false;
+            }}
+            onChange={(event) => {
+              changeRankingMode(event.target.value);
+              if (sortPointerSelectionRef.current) event.currentTarget.blur();
+            }}
           >
             {RANKING_OPTIONS.map((option) => (
               <option key={option} value={option}>

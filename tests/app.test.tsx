@@ -601,6 +601,17 @@ describe("project chat launcher", () => {
     fireEvent.change(selector, { target: { value: "Alphabetical" } });
     expect(window.localStorage.getItem("bb-plugin-homepage:ranking-mode"))
       .toBe("Alphabetical");
+
+    selector.focus();
+    fireEvent.pointerDown(selector);
+    fireEvent.change(selector, { target: { value: "Manual" } });
+    expect(document.activeElement).not.toBe(selector);
+    expect(selector.className).not.toContain("ring-");
+
+    selector.focus();
+    fireEvent.keyDown(selector, { key: "ArrowUp" });
+    fireEvent.change(selector, { target: { value: "Most chats" } });
+    expect(document.activeElement).toBe(selector);
     slot.lifecycle.unmount();
   });
 
