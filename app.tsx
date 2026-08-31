@@ -270,6 +270,66 @@ function NewChatSparkline({
   );
 }
 
+function HiddenProjectsSettings() {
+  const rpc = useRpc<typeof rpcContract>();
+  const [hiddenIds, setHiddenIds] = useState<readonly string[] | null>(null);
+  const [error, setError] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
+
+  function loadHiddenProjects(): void {
+    void rpc.call("listHiddenProjects").then(
+      ({ projectIds }) => {
+        setHiddenIds(projectIds);
+        setError(false);
+      },
+      () => setError(true),
+    );
+  }
+
+  useEffect(loadHiddenProjects, []);
+  useRealtime("hidden-projects-changed", loadHiddenProjects);
+
+  function resetHiddenProjects(): void {
+    if (isResetting || hiddenIds?.length === 0) return;
+    setIsResetting(true);
+    setError(false);
+    void rpc.call("resetHiddenProjects").then(
+      ({ projectIds }) => {
+        setHiddenIds(projectIds);
+        setIsResetting(false);
+      },
+      () => {
+        setError(true);
+        setIsResetting(false);
+      },
+    );
+  }
+
+  const description = error
+    ? "Hidden projects could not be loaded."
+    : hiddenIds === null
+      ? "Loading hidden projects..."
+      : hiddenIds.length === 0
+        ? "No projects are hidden."
+        : `${hiddenIds.length} hidden project${hiddenIds.length === 1 ? "" : "s"}.`;
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <p role={error ? "alert" : "status"} className="text-sm text-muted-foreground">
+        {description}
+      </p>
+      <button
+        type="button"
+        disabled={isResetting || hiddenIds === null || hiddenIds.length === 0}
+        className="h-8 rounded-md border border-border bg-card px-3 text-sm font-medium text-foreground transition-colors hover:bg-state-hover focus-visible:border-ring focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+        onClick={resetHiddenProjects}
+      >
+        {isResetting ? "Resetting..." : "Reset hidden projects"}
+      </button>
+    </div>
+  );
+}
+
 function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
   const { status, projects, threads } = experimental_useSidebarThreads();
   const actions = experimental_useSidebarThreadActions();
@@ -287,13 +347,16 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
   const [projectNameOverrides, setProjectNameOverrides] = useState<
     Readonly<Record<string, ProjectNameOverride>>
   >({});
+  const [hiddenIds, setHiddenIds] = useState<readonly string[]>([]);
   const displayedProjects = useMemo(
     () =>
-      projects.map((project) => {
-        const override = projectNameOverrides[project.id];
-        return override ? { ...project, name: override.name } : project;
-      }),
-    [projectNameOverrides, projects],
+      projects
+        .filter((project) => !hiddenIds.includes(project.id))
+        .map((project) => {
+          const override = projectNameOverrides[project.id];
+          return override ? { ...project, name: override.name } : project;
+        }),
+    [hiddenIds, projectNameOverrides, projects],
   );
   const rankedProjects = useMemo(
     () => rankProjects(displayedProjects, threads, settings, projectId, manualOrder),
@@ -342,6 +405,26 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
   useRealtime("pins-changed", () => {
     void rpc.call("listPinnedProjects").then(
       ({ projectIds }) => setPinnedIds(projectIds),
+      () => {},
+    );
+  });
+  useEffect(() => {
+    let cancelled = false;
+    void rpc.call("listHiddenProjects").then(
+      ({ projectIds }) => {
+        if (!cancelled) setHiddenIds(projectIds);
+      },
+      () => {
+        // The launcher remains usable if hidden-project state cannot be read.
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  useRealtime("hidden-projects-changed", () => {
+    void rpc.call("listHiddenProjects").then(
+      ({ projectIds }) => setHiddenIds(projectIds),
       () => {},
     );
   });
@@ -439,6 +522,21 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
     void rpc.call("setProjectPinned", { projectId: targetId, pinned }).then(
       ({ projectIds }) => setPinnedIds(projectIds),
       () => {},
+    );
+  }
+
+  function hideProject(targetId: string): void {
+    setHiddenIds((current) =>
+      current.includes(targetId) ? current : [...current, targetId],
+    );
+    void rpc.call("setProjectHidden", { projectId: targetId, hidden: true }).then(
+      ({ projectIds }) => setHiddenIds(projectIds),
+      () => {
+        void rpc.call("listHiddenProjects").then(
+          ({ projectIds }) => setHiddenIds(projectIds),
+          () => setHiddenIds((current) => current.filter((id) => id !== targetId)),
+        );
+      },
     );
   }
 
@@ -823,6 +921,12 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
                 Rename
               </ContextMenu.Item>
             ) : null}
+            <ContextMenu.Item
+              className={menuItemClassName}
+              onSelect={() => hideProject(project.id)}
+            >
+              Hide project
+            </ContextMenu.Item>
           </ContextMenu.Content>
         </ContextMenu.Portal>
       </ContextMenu.Root>
@@ -978,5 +1082,12 @@ export default definePluginApp((app) => {
     id: "project-chat-launcher",
     title: "Start in a project",
     component: ProjectChatLauncher,
+  });
+
+  app.slots.settingsSection({
+    id: "hidden-projects",
+    title: "Hidden projects",
+    description: "Restore every project hidden from the homepage.",
+    component: HiddenProjectsSettings,
   });
 });

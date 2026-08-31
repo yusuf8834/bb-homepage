@@ -71,6 +71,41 @@ describe("pinned projects", () => {
   });
 });
 
+describe("hidden projects", () => {
+  it("persists hidden projects and resets them", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "homepage" });
+    plugin(bb);
+
+    await expect(harness.behavior.callRpc("listHiddenProjects")).resolves.toEqual({
+      projectIds: [],
+    });
+    await expect(
+      harness.behavior.callRpc("setProjectHidden", {
+        projectId: "a",
+        hidden: true,
+      }),
+    ).resolves.toEqual({ projectIds: ["a"] });
+    await harness.behavior.callRpc("setProjectHidden", {
+      projectId: "b",
+      hidden: true,
+    });
+    await harness.behavior.callRpc("setProjectHidden", {
+      projectId: "a",
+      hidden: true,
+    });
+    await expect(harness.behavior.callRpc("listHiddenProjects")).resolves.toEqual({
+      projectIds: ["a", "b"],
+    });
+
+    await expect(harness.behavior.callRpc("resetHiddenProjects")).resolves.toEqual({
+      projectIds: [],
+    });
+    await expect(harness.behavior.callRpc("listHiddenProjects")).resolves.toEqual({
+      projectIds: [],
+    });
+  });
+});
+
 describe("project icon route", () => {
   it("declares configurable homepage behavior", () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "homepage" });

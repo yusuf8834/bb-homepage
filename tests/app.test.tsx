@@ -174,6 +174,11 @@ describe("project chat launcher", () => {
       setProjectPinned: ({ projectId, pinned }) => ({
         projectIds: pinned ? ["beta", projectId] : [],
       }),
+      listHiddenProjects: () => ({ projectIds: [] }),
+      setProjectHidden: ({ projectId, hidden }) => ({
+        projectIds: hidden ? [projectId] : [],
+      }),
+      resetHiddenProjects: () => ({ projectIds: [] }),
       renameProject: ({ projectId, name }) => ({ projectId, name }),
     };
     const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {
@@ -207,6 +212,11 @@ describe("project chat launcher", () => {
       setProjectPinned: ({ projectId, pinned }) => ({
         projectIds: pinned ? [projectId] : [],
       }),
+      listHiddenProjects: () => ({ projectIds: [] }),
+      setProjectHidden: ({ projectId, hidden }) => ({
+        projectIds: hidden ? [projectId] : [],
+      }),
+      resetHiddenProjects: () => ({ projectIds: [] }),
       renameProject: ({ projectId, name }) => ({ projectId, name }),
     };
     const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {
@@ -291,11 +301,63 @@ describe("project chat launcher", () => {
     slot.lifecycle.unmount();
   });
 
+  it("removes projects returned by hidden-project storage", async () => {
+    const app = await loadPluginApp(() => import("../app"));
+    const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {
+      rpc: {
+        listPinnedProjects: () => ({ projectIds: [] }),
+        listHiddenProjects: () => ({ projectIds: ["alpha"] }),
+      },
+      sidebarThreads: {
+        projects: [
+          { id: "alpha", name: "Alpha", isPersonal: false },
+          { id: "beta", name: "Beta", isPersonal: false },
+        ],
+        threads: [],
+      },
+    });
+
+    await waitFor(() => {
+      expect(
+        slot.queryByRole("button", { name: "Start a new chat in Alpha" }),
+      ).toBeNull();
+    });
+    expect(
+      slot.getByRole("button", { name: "Start a new chat in Beta" }),
+    ).not.toBeNull();
+    slot.lifecycle.unmount();
+  });
+
+  it("resets hidden projects from the plugin settings section", async () => {
+    const app = await loadPluginApp(() => import("../app"));
+    const slot = renderSlot(app.settingsSections[0]!, {}, {
+      rpc: {
+        listHiddenProjects: () => ({ projectIds: ["alpha", "beta"] }),
+        resetHiddenProjects: () => ({ projectIds: [] }),
+      },
+    });
+
+    await slot.findByText("2 hidden projects.");
+    fireEvent.click(slot.getByRole("button", { name: "Reset hidden projects" }));
+
+    await slot.findByText("No projects are hidden.");
+    expect(slot.inspection.rpcCalls).toContainEqual({
+      method: "resetHiddenProjects",
+      input: null,
+    });
+    slot.lifecycle.unmount();
+  });
+
   it("renames a project inline by right-clicking its icon", async () => {
     const app = await loadPluginApp(() => import("../app"));
     const rpcHandlers: PluginRpcTestHandlers<typeof rpcContract> = {
       listPinnedProjects: () => ({ projectIds: [] }),
       setProjectPinned: () => ({ projectIds: [] }),
+      listHiddenProjects: () => ({ projectIds: [] }),
+      setProjectHidden: ({ projectId, hidden }) => ({
+        projectIds: hidden ? [projectId] : [],
+      }),
+      resetHiddenProjects: () => ({ projectIds: [] }),
       renameProject: ({ projectId, name }) => ({ projectId, name }),
     };
     const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {

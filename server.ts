@@ -6,6 +6,7 @@ import { findProjectIcon } from "./src/project-icons.js";
 const FOUND_CACHE_CONTROL = "private, max-age=300";
 const MISSING_CACHE_CONTROL = "private, max-age=60";
 const PINNED_PROJECTS_KEY = "pinned-projects";
+const HIDDEN_PROJECTS_KEY = "hidden-projects";
 
 export const rpcContract = defineRpcContract({
   listPinnedProjects: {
@@ -14,6 +15,18 @@ export const rpcContract = defineRpcContract({
   },
   setProjectPinned: {
     input: z.object({ projectId: z.string().min(1), pinned: z.boolean() }).strict(),
+    output: z.object({ projectIds: z.array(z.string()) }),
+  },
+  listHiddenProjects: {
+    input: z.null(),
+    output: z.object({ projectIds: z.array(z.string()) }),
+  },
+  setProjectHidden: {
+    input: z.object({ projectId: z.string().min(1), hidden: z.boolean() }).strict(),
+    output: z.object({ projectIds: z.array(z.string()) }),
+  },
+  resetHiddenProjects: {
+    input: z.null(),
     output: z.object({ projectIds: z.array(z.string()) }),
   },
   renameProject: {
@@ -64,6 +77,16 @@ export default function plugin(bb: BbPluginApi) {
     return stored.filter((value): value is string => typeof value === "string");
   }
 
+  async function readHiddenProjects(): Promise<string[]> {
+    const stored = await bb.storage.kv.get<unknown>(HIDDEN_PROJECTS_KEY);
+    if (!Array.isArray(stored)) return [];
+    return [...new Set(
+      stored.filter((value): value is string =>
+        typeof value === "string" && value.length > 0,
+      ),
+    )].slice(0, 10_000);
+  }
+
   bb.rpc.register(rpcContract, {
     async listPinnedProjects() {
       return { projectIds: await readPinnedProjects() };
@@ -80,6 +103,30 @@ export default function plugin(bb: BbPluginApi) {
         bb.realtime.publish("pins-changed", null);
       }
       return { projectIds: next };
+    },
+    async listHiddenProjects() {
+      return { projectIds: await readHiddenProjects() };
+    },
+    async setProjectHidden({ projectId, hidden }) {
+      const current = await readHiddenProjects();
+      const next = hidden
+        ? current.includes(projectId)
+          ? current
+          : [...current, projectId]
+        : current.filter((id) => id !== projectId);
+      if (next.length !== current.length) {
+        await bb.storage.kv.set(HIDDEN_PROJECTS_KEY, next);
+        bb.realtime.publish("hidden-projects-changed", null);
+      }
+      return { projectIds: next };
+    },
+    async resetHiddenProjects() {
+      const current = await readHiddenProjects();
+      if (current.length > 0) {
+        await bb.storage.kv.delete(HIDDEN_PROJECTS_KEY);
+        bb.realtime.publish("hidden-projects-changed", null);
+      }
+      return { projectIds: [] };
     },
     async renameProject({ projectId, name }) {
       const project = await bb.sdk.projects.update({ projectId, name });
