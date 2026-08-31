@@ -182,24 +182,24 @@ function NewChatSparkline({
   }, []);
 
   const total = activity.reduce((sum, count) => sum + count, 0);
-  if (total < 2 || activity.length < 2) return null;
+  if (total === 0 || activity.length < 2) return null;
 
   const width = 100;
-  const height = 20;
-  const baseline = height - 1;
-  const chartTop = 2.5;
+  const height = 24;
+  const baseline = height - 2;
+  const chartTop = 3;
   const maximum = Math.max(...activity);
   const points = activity.map((count, index) => ({
     x: (index / (activity.length - 1)) * width,
     y: baseline - (count / maximum) * (baseline - chartTop),
   }));
   const line = buildSmoothLinePath(points, chartTop, baseline);
-  const area = `${line} L ${width} ${baseline} L 0 ${baseline} Z`;
-  const label = `${projectName}: ${total} new chats in the last 14 days`;
+  const area = `${line} L ${width} ${height} L 0 ${height} Z`;
+  const label = `${projectName}: ${total} new chat${total === 1 ? "" : "s"} in the last 14 days`;
 
   return (
     <span
-      className="pointer-events-none absolute inset-x-0 bottom-0 -z-10 h-5"
+      className="pointer-events-none absolute inset-x-0 bottom-0 -z-10 h-6"
       title={label}
     >
       <svg
@@ -207,12 +207,12 @@ function NewChatSparkline({
         aria-label={label}
         viewBox={`0 0 ${width} ${height}`}
         preserveAspectRatio="none"
-        className="h-full w-full text-primary/60 transition-colors group-hover:text-primary/80"
+        className="h-full w-full text-primary/75 transition-colors group-hover:text-primary"
       >
         <path
           d={area}
           fill="currentColor"
-          fillOpacity="0.08"
+          fillOpacity="0.1"
           className={[
             "transition-opacity duration-300 delay-200 motion-reduce:transition-none",
             drawn ? "opacity-100" : "opacity-0",
@@ -222,7 +222,7 @@ function NewChatSparkline({
           d={line}
           fill="none"
           stroke="currentColor"
-          strokeWidth="1.25"
+          strokeWidth="1.5"
           strokeLinecap="round"
           strokeLinejoin="round"
           vectorEffect="non-scaling-stroke"
@@ -376,6 +376,7 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
                 ) : null}
               </span>
               <NewChatSparkline projectName={project.name} activity={activity} />
+              <span aria-hidden="true" className="w-6 shrink-0" />
               <span
                 aria-hidden="true"
                 className="flex size-6 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors group-hover:border-primary group-hover:text-primary"
@@ -394,7 +395,7 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
               type="button"
               aria-label={isPinned ? `Unpin ${project.name}` : `Pin ${project.name}`}
               aria-pressed={isPinned}
-              className="absolute right-1.5 top-1.5 z-10 flex size-6 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring group-hover:opacity-100"
+              className="absolute right-[52px] top-1/2 z-10 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring group-hover:opacity-100"
               onClick={() => togglePin(project.id, !isPinned)}
             >
               <svg
