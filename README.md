@@ -11,6 +11,15 @@ counts, projects without chats, Personal, and project artwork. All projects
 remain visible by default. Archived chats and child chats do not affect usage
 data.
 
+Each card shows the chat count, a relative last-activity time, and a 14-day
+sparkline of new chats whose draw animation respects reduced-motion
+preferences. Projects can be pinned from the card's hover button or its
+context menu (right-click, or long-press on touch); pinned projects render in
+their own section above the grid in pin order, unaffected by the sort mode,
+and pins persist server-side so they sync across windows. The plugin also
+hides the built-in recent-chats section on the compose page in favor of the
+launcher.
+
 For ordinary projects, the plugin looks for a declared BB branding icon or a
 likely icon, favicon, or logo in the project files. Personal projects and
 projects without a usable image display a folder icon. Project icons are cached

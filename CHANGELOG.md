@@ -7,11 +7,15 @@ All notable changes to this project are documented here.
 - Add a homepage launcher that starts a new thread in the selected project.
 - Add a homepage selector for recent-activity, chat-count, and alphabetical
   project ordering, persisted in the current browser.
+- Add pinned projects: pin from the card's hover button or context menu
+  (long-press on touch); pins persist server-side and sync across windows.
+- Show each project's chat count, relative last-activity time, and a
+  14-day new-chat sparkline with a reduced-motion-aware draw animation.
 - Add settings for current-project priority, chat counts, unused projects,
   Personal, and project artwork.
-- Show a relative last-activity time next to each project's chat count.
-- Pin projects into a separate section above the grid, synced across windows.
 - Discover project branding and common icon files with bounded positive and
   negative caching.
 - Validate SVG artwork as inert XML and reject unsafe paths, markup, and
   external references.
+- Hide the built-in recent-chats section on the compose page in favor of
+  the launcher.

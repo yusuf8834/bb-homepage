@@ -9,7 +9,7 @@ import {
   type PluginRpcTestHandlers,
 } from "@get-bb/plugin-sdk/testing/app";
 import type { rpcContract } from "./server.js";
-import { buildNewChatActivity } from "./activity.js";
+import { buildNewChatActivityByProject } from "./activity.js";
 import { formatRelativeTime } from "./relative-time.js";
 
 function thread(id: string, projectId: string, updatedAt: number) {
@@ -50,17 +50,6 @@ afterEach(() => {
   window.localStorage.clear();
 });
 
-// jsdom lacks the layout APIs Radix menus rely on.
-window.ResizeObserver ??= class {
-  observe() {}
-  unobserve() {}
-  disconnect() {}
-};
-Element.prototype.hasPointerCapture ??= () => false;
-Element.prototype.setPointerCapture ??= () => {};
-Element.prototype.releasePointerCapture ??= () => {};
-Element.prototype.scrollIntoView ??= () => {};
-
 describe("project chat launcher", () => {
   it("hides the main-page recent chats section and cleans up on disposal", async () => {
     const recents = document.createElement("section");
@@ -99,7 +88,7 @@ describe("project chat launcher", () => {
     const thirteenDaysAgo = new Date(2026, 7, 17, 18).getTime();
     const outsideRange = new Date(2026, 7, 16, 23).getTime();
 
-    expect(buildNewChatActivity([
+    expect(buildNewChatActivityByProject([
       thread("today", "project-1", now),
       thread("yesterday", "project-1", oneDayAgo),
       { ...thread("archived", "project-1", oneDayAgo), isArchived: true },
@@ -107,7 +96,7 @@ describe("project chat launcher", () => {
       thread("old", "project-1", outsideRange),
       thread("other-project", "project-2", now),
       thread("first-day", "project-1", thirteenDaysAgo),
-    ], "project-1", now)).toEqual([
+    ], now).get("project-1")).toEqual([
       1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1,
     ]);
   });

@@ -1,6 +1,6 @@
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
 
-export const ACTIVITY_DAYS = 14;
+const ACTIVITY_DAYS = 14;
 
 function localDayKey(timestamp: number): string {
   const date = new Date(timestamp);
@@ -34,15 +34,4 @@ export function buildNewChatActivityByProject(
     activity[index] += 1;
   }
   return byProject;
-}
-
-export function buildNewChatActivity(
-  threads: readonly PluginSidebarThread[],
-  projectId: string,
-  now = Date.now(),
-): number[] {
-  return (
-    buildNewChatActivityByProject(threads, now).get(projectId) ??
-    Array.from({ length: ACTIVITY_DAYS }, () => 0)
-  );
 }

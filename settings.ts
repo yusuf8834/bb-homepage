@@ -17,7 +17,7 @@ export interface HomepageSettings {
 
 export type HomepagePluginSettings = Omit<HomepageSettings, "rankingMode">;
 
-export const DEFAULT_HOMEPAGE_SETTINGS: HomepageSettings = {
+const DEFAULT_HOMEPAGE_SETTINGS: HomepageSettings = {
   rankingMode: "Recent activity",
   currentProjectFirst: true,
   showChatCounts: true,

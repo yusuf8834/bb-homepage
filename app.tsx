@@ -32,7 +32,7 @@ interface RankedProject extends PluginSidebarProject {
   lastUsedAt: number;
 }
 
-export function rankProjects(
+function rankProjects(
   projects: readonly PluginSidebarProject[],
   threads: readonly PluginSidebarThread[],
   settings: HomepageSettings,

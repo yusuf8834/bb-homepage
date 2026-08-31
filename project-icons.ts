@@ -21,7 +21,7 @@ const BLOCKED_SVG_ELEMENTS = new Set([
 ]);
 
 export const PROJECT_ICON_MAX_BYTES = 2 * 1024 * 1024;
-export const PROJECT_MANIFEST_MAX_BYTES = 1024 * 1024;
+const PROJECT_MANIFEST_MAX_BYTES = 1024 * 1024;
 
 interface ProjectFileContent {
   content: string;
