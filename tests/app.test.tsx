@@ -122,6 +122,28 @@ describe("project chat launcher", () => {
     ]);
   });
 
+  it("runs the sparkline entrance only on the first launcher mount", async () => {
+    const app = await loadPluginApp(() => import("../app"));
+    const sidebarThreads = {
+      projects: [{ id: "alpha", name: "Alpha", isPersonal: false }],
+      threads: [thread("alpha-thread", "alpha", Date.now())],
+    };
+
+    const first = renderSlot(app.homepageSections[0]!, { projectId: null }, {
+      sidebarThreads,
+    });
+    expect(first.container.querySelector("[data-sparkline-entrance]"))
+      .not.toBeNull();
+    first.lifecycle.unmount();
+
+    const remounted = renderSlot(app.homepageSections[0]!, { projectId: "alpha" }, {
+      sidebarThreads,
+    });
+    expect(remounted.container.querySelector("[data-sparkline-entrance]"))
+      .toBeNull();
+    remounted.lifecycle.unmount();
+  });
+
   it("keeps recent-activity order while highlighting and opening the selected project", async () => {
     const app = await loadPluginApp(() => import("../app"));
     const slot = renderSlot(app.homepageSections[0]!, { projectId: "project-2" }, {

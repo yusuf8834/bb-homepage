@@ -29,6 +29,7 @@ const PROJECT_ICON_URL = "/api/v1/plugins/homepage/http/project-icon";
 const RANKING_STORAGE_KEY = "bb-plugin-homepage:ranking-mode";
 const MANUAL_ORDER_STORAGE_KEY = "bb-plugin-homepage:manual-project-order";
 const DRAG_ACTIVATION_DISTANCE = 8;
+let hasAnimatedProjectLauncher = false;
 
 interface RankedProject extends PluginSidebarProject {
   chatCount: number;
@@ -217,15 +218,18 @@ function buildSmoothLinePath(
 function NewChatSparkline({
   projectName,
   activity,
+  animate,
 }: {
   projectName: string;
   activity: readonly number[];
+  animate: boolean;
 }) {
-  const [drawn, setDrawn] = useState(false);
+  const [drawn, setDrawn] = useState(!animate);
   useEffect(() => {
+    if (!animate) return;
     const frame = window.requestAnimationFrame(() => setDrawn(true));
     return () => window.cancelAnimationFrame(frame);
-  }, []);
+  }, [animate]);
 
   const total = activity.reduce((sum, count) => sum + count, 0);
   if (total === 0 || activity.length < 2) return null;
@@ -249,6 +253,7 @@ function NewChatSparkline({
       <svg
         role="img"
         aria-label={label}
+        data-sparkline-entrance={animate ? "" : undefined}
         viewBox={`0 0 ${width} ${height}`}
         className="h-6 w-[72px] overflow-visible text-primary/70 transition-colors group-hover:text-primary [transition:clip-path_500ms_ease-out,color_150ms] motion-reduce:transition-none"
         style={{ clipPath: drawn ? "inset(-4px)" : "inset(-4px 100% -4px -4px)" }}
@@ -330,6 +335,10 @@ function HiddenProjectsSettings() {
 }
 
 function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
+  const animateSparklinesRef = useRef(!hasAnimatedProjectLauncher);
+  useEffect(() => {
+    hasAnimatedProjectLauncher = true;
+  }, []);
   const { status, projects, threads } = experimental_useSidebarThreads();
   const actions = experimental_useSidebarThreadActions();
   const composer = useComposer();
@@ -791,7 +800,11 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
         </span>
         {!isEditing ? (
           <>
-            <NewChatSparkline projectName={project.name} activity={activity} />
+            <NewChatSparkline
+              projectName={project.name}
+              activity={activity}
+              animate={animateSparklinesRef.current}
+            />
             <span
               aria-hidden="true"
               className="flex size-6 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors group-hover:border-primary group-hover:text-primary"
