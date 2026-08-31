@@ -452,7 +452,7 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
             </svg>
             Pinned
           </p>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-2 sm:grid-cols-2">
             {pinnedProjects.map(renderProject)}
           </div>
         </div>
@@ -464,7 +464,7 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
               All projects
             </p>
           ) : null}
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-2 sm:grid-cols-2">
             {unpinnedProjects.map(renderProject)}
           </div>
         </div>
