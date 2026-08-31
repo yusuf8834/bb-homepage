@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented here.
 
+## 0.2.0 - 2026-08-30
+
+- Add Manual sorting with full-card drag and drop. Clicks still open projects,
+  and drag affordances appear only after the gesture starts.
+- Pin or unpin projects by dragging between the Pinned and All projects
+  sections, while keeping the right-click actions available.
+- Add right-click actions to rename and hide projects. Hidden projects can be
+  restored from plugin settings.
+- Highlight the project selected in the new-thread composer without changing
+  the chosen sort order.
+- Remove the ineffective current-project-priority setting and hover pin button.
+- Refine card borders, sort focus behavior, project artwork sizing, and
+  sparkline animation so it runs only on the first launcher mount.
+
 ## 0.1.1 - 2026-08-30
 
 - Organize implementation helpers and tests into dedicated directories.

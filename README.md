@@ -11,16 +11,18 @@ is intentionally separate from provider plugins.
 
 ## Features
 
-- Sort projects by recent activity, chat count, or name. The browser remembers
-  the selected order.
-- Control current-project priority, chat counts, projects without chats,
-  Personal, and project artwork from plugin settings. All projects are visible
-  by default.
+- Sort projects by recent activity, chat count, name, or a saved manual order.
+  In Manual mode, drag a card to reorder it and click normally to open it.
+- Highlight the project selected in the new-thread composer without moving it
+  away from the chosen sort position.
+- Control chat counts, projects without chats, Personal, and project artwork
+  from plugin settings. All projects are visible by default.
 - See each project's chat count, relative last-activity time, and 14-day
   new-chat sparkline. Archived and child chats do not affect these values.
-- Pin projects from the hover button, right-click menu, or long-press menu.
-  Pinned projects sync across windows and remain in pin order above the main
-  grid.
+- Pin projects from the right-click menu, or drag them into the Pinned section
+  in Manual mode. Pinned projects sync across windows.
+- Rename or hide a project from its right-click menu. Restore all hidden
+  projects from plugin settings.
 - Respect reduced-motion preferences when drawing sparklines.
 - Hide BB's built-in recent-chats section on the compose page so the launcher
   stays focused on starting new chats.
