@@ -182,12 +182,12 @@ function NewChatSparkline({
   }, []);
 
   const total = activity.reduce((sum, count) => sum + count, 0);
-  if (total === 0 || activity.length < 2) return null;
+  if (total < 2 || activity.length < 2) return null;
 
-  const width = 72;
-  const height = 24;
-  const baseline = height - 2;
-  const chartTop = 3;
+  const width = 100;
+  const height = 20;
+  const baseline = height - 1;
+  const chartTop = 2.5;
   const maximum = Math.max(...activity);
   const points = activity.map((count, index) => ({
     x: (index / (activity.length - 1)) * width,
@@ -195,21 +195,24 @@ function NewChatSparkline({
   }));
   const line = buildSmoothLinePath(points, chartTop, baseline);
   const area = `${line} L ${width} ${baseline} L 0 ${baseline} Z`;
-  const label = `${projectName}: ${total} new chat${total === 1 ? "" : "s"} in the last 14 days`;
-  const latest = points.at(-1)!;
+  const label = `${projectName}: ${total} new chats in the last 14 days`;
 
   return (
-    <span className="shrink-0" title={label}>
+    <span
+      className="pointer-events-none absolute inset-x-0 bottom-0 -z-10 h-5"
+      title={label}
+    >
       <svg
         role="img"
         aria-label={label}
         viewBox={`0 0 ${width} ${height}`}
-        className="h-6 w-[72px] overflow-visible text-primary/70 transition-colors group-hover:text-primary"
+        preserveAspectRatio="none"
+        className="h-full w-full text-primary/60 transition-colors group-hover:text-primary/80"
       >
         <path
           d={area}
           fill="currentColor"
-          fillOpacity="0.1"
+          fillOpacity="0.08"
           className={[
             "transition-opacity duration-300 delay-200 motion-reduce:transition-none",
             drawn ? "opacity-100" : "opacity-0",
@@ -219,23 +222,13 @@ function NewChatSparkline({
           d={line}
           fill="none"
           stroke="currentColor"
-          strokeWidth="1.5"
+          strokeWidth="1.25"
           strokeLinecap="round"
           strokeLinejoin="round"
           vectorEffect="non-scaling-stroke"
           pathLength={100}
           className="[transition:stroke-dashoffset_450ms_ease-out] motion-reduce:transition-none"
           style={{ strokeDasharray: 100, strokeDashoffset: drawn ? 0 : 100 }}
-        />
-        <circle
-          cx={latest.x}
-          cy={latest.y}
-          r="1.75"
-          fill="currentColor"
-          className={[
-            "transition-opacity duration-300 delay-300 motion-reduce:transition-none",
-            drawn ? "opacity-100" : "opacity-0",
-          ].join(" ")}
         />
       </svg>
     </span>
@@ -345,7 +338,7 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
     const isPinned = pinnedIds.includes(project.id);
     const activity = activityByProject.get(project.id) ?? [];
     const className = [
-      "flex w-full min-w-0 items-center gap-3 rounded-lg border bg-card px-4 py-3 text-left transition-colors group-hover:border-foreground/20 group-hover:bg-state-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+      "relative isolate flex w-full min-w-0 items-center gap-3 overflow-hidden rounded-lg border bg-card px-4 py-3 text-left transition-colors group-hover:border-foreground/20 group-hover:bg-state-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
       isCurrent ? "border-ring bg-state-hover" : "border-border",
     ].join(" ");
 
@@ -401,10 +394,7 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
               type="button"
               aria-label={isPinned ? `Unpin ${project.name}` : `Pin ${project.name}`}
               aria-pressed={isPinned}
-              className={[
-                "absolute right-1.5 top-1.5 z-10 flex size-6 items-center justify-center rounded-md text-muted-foreground transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-                isPinned ? "opacity-100" : "opacity-0 group-hover:opacity-100",
-              ].join(" ")}
+              className="absolute right-1.5 top-1.5 z-10 flex size-6 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring group-hover:opacity-100"
               onClick={() => togglePin(project.id, !isPinned)}
             >
               <svg
@@ -467,16 +457,28 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
         </label>
       </div>
       {pinnedProjects.length > 0 ? (
-        <div className="mb-3">
-          <p className="mb-2 text-xs font-medium text-muted-foreground">Pinned</p>
+        <div className="mb-4">
+          <p className="mb-2 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+            <svg viewBox="0 0 16 16" fill="currentColor" className="size-3" aria-hidden="true">
+              <path d="M4.75 2.5h6.5a.5.5 0 0 1 .5.5v10.15a.25.25 0 0 1-.4.2L8 10.9l-3.35 2.45a.25.25 0 0 1-.4-.2V3a.5.5 0 0 1 .5-.5z" />
+            </svg>
+            Pinned
+          </p>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {pinnedProjects.map(renderProject)}
           </div>
         </div>
       ) : null}
       {unpinnedProjects.length > 0 ? (
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {unpinnedProjects.map(renderProject)}
+        <div>
+          {pinnedProjects.length > 0 ? (
+            <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+              All projects
+            </p>
+          ) : null}
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {unpinnedProjects.map(renderProject)}
+          </div>
         </div>
       ) : null}
     </div>
