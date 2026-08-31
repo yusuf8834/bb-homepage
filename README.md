@@ -4,7 +4,10 @@ BB Homepage adds a "Start in a project" section to BB's new-thread page. Each
 project card opens a focused new-thread composer for that project. The plugin
 is intentionally separate from provider plugins.
 
-![The BB new-thread page with the Start in a project launcher: a two-column grid of project cards showing icons, chat counts, relative activity times, and 14-day sparklines](docs/screenshot.jpeg)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshot-dark.jpeg">
+  <img src="docs/screenshot-light.jpeg" alt="The BB new-thread page with the Start in a project launcher: a pinned section above a two-column grid of project cards showing icons, chat counts, relative activity times, and 14-day sparklines">
+</picture>
 
 Recent activity is the default ordering. A selector above the project cards
 also offers most chats and alphabetical ordering, and remembers the choice in
