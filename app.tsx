@@ -154,7 +154,11 @@ function ProjectIcon({
     <span
       aria-hidden="true"
       data-homepage-project-icon=""
-      className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted text-muted-foreground group-hover:text-foreground"
+      className={`flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-md ${
+        useFallback
+          ? "bg-muted text-muted-foreground group-hover:text-foreground"
+          : "bg-transparent"
+      }`}
       onContextMenu={
         onRename
           ? (event) => {
@@ -170,7 +174,7 @@ function ProjectIcon({
       ) : (
         <img
           alt=""
-          className="size-5 object-contain"
+          className="size-8 object-contain"
           decoding="async"
           draggable={false}
           loading="lazy"

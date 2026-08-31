@@ -153,6 +153,11 @@ describe("project chat launcher", () => {
     expect(slot.getByRole("button", { name: "Start a new chat in Often" }).getAttribute("aria-current"))
       .toBe("page");
     expect(slot.container.querySelectorAll('img[loading="lazy"]')).toHaveLength(3);
+    expect(
+      slot.container.querySelector("[data-homepage-project-icon]")?.className,
+    ).not.toContain("bg-muted");
+    expect(slot.container.querySelector('img[loading="lazy"]')?.className)
+      .toContain("size-8");
     expect(slot.queryAllByRole("img", { name: /new chats? in the last 14 days/ }))
       .toHaveLength(0);
     expect(slot.container.querySelector("[data-homepage-sort]")?.className)
@@ -481,6 +486,10 @@ describe("project chat launcher", () => {
     ]);
     expect(slot.container.querySelectorAll("img")).toHaveLength(0);
     expect(slot.container.querySelectorAll('svg[viewBox="0 0 24 24"]')).toHaveLength(2);
+    expect(
+      Array.from(slot.container.querySelectorAll("[data-homepage-project-icon]"))
+        .every((icon) => icon.className.includes("bg-muted")),
+    ).toBe(true);
     slot.lifecycle.unmount();
   });
 
