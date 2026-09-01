@@ -1,7 +1,10 @@
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { ProjectIconCache } from "./src/project-icon-cache.js";
-import { findProjectIcon } from "./src/project-icons.js";
+import {
+  findProjectArtwork,
+  type ProjectArtwork,
+} from "./src/project-icons.js";
 
 const FOUND_CACHE_CONTROL = "private, max-age=300";
 const MISSING_CACHE_CONTROL = "private, max-age=60";
@@ -37,6 +40,14 @@ export const rpcContract = defineRpcContract({
       })
       .strict(),
     output: z.object({ projectId: z.string(), name: z.string() }),
+  },
+  getProjectArtwork: {
+    input: z.object({ projectId: z.string().min(1) }).strict(),
+    output: z.discriminatedUnion("kind", [
+      z.object({ kind: z.literal("glyph"), svg: z.string() }),
+      z.object({ kind: z.literal("image") }),
+      z.object({ kind: z.literal("missing") }),
+    ]),
   },
 });
 
@@ -126,10 +137,17 @@ export default function plugin(bb: BbPluginApi) {
       const project = await bb.sdk.projects.update({ projectId, name });
       return { projectId: project.id, name: project.name };
     },
+    async getProjectArtwork({ projectId }) {
+      const artwork = await iconCache.get(projectId);
+      if (artwork === null) return { kind: "missing" as const };
+      return artwork.kind === "glyph"
+        ? { kind: "glyph" as const, svg: artwork.svg }
+        : { kind: "image" as const };
+    },
   });
 
-  const iconCache = new ProjectIconCache((projectId, signal) =>
-    findProjectIcon(
+  const iconCache = new ProjectIconCache<ProjectArtwork>((projectId, signal) =>
+    findProjectArtwork(
       {
         listFiles: (args) => bb.sdk.projects.files(args),
         readFile: (args) => bb.sdk.projects.fileContent(args),
@@ -147,7 +165,7 @@ export default function plugin(bb: BbPluginApi) {
     try {
       const icon = await iconCache.get(projectId);
 
-      if (icon === null) {
+      if (icon === null || icon.kind !== "image") {
         return new Response(null, {
           status: 404,
           headers: { "cache-control": MISSING_CACHE_CONTROL },

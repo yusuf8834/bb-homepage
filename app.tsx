@@ -116,6 +116,10 @@ function rankProjects(
     });
 }
 
+type ProjectArtworkState =
+  | { kind: "fallback" | "image" | "loading" }
+  | { kind: "glyph"; svg: string };
+
 function FolderIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" className="size-4">
@@ -137,6 +141,27 @@ function FolderIcon() {
   );
 }
 
+/** Draw a server-rendered BB glyph as a mask so it inherits the tile's text color. */
+function GlyphIcon({ svg }: { svg: string }) {
+  const mask = `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
+  return (
+    <span
+      data-homepage-project-glyph=""
+      className="size-5 bg-current"
+      style={{
+        maskImage: mask,
+        WebkitMaskImage: mask,
+        maskSize: "contain",
+        WebkitMaskSize: "contain",
+        maskRepeat: "no-repeat",
+        WebkitMaskRepeat: "no-repeat",
+        maskPosition: "center",
+        WebkitMaskPosition: "center",
+      }}
+    />
+  );
+}
+
 function ProjectIcon({
   projectId,
   isPersonal,
@@ -148,15 +173,39 @@ function ProjectIcon({
   loadArtwork: boolean;
   onRename?: () => void;
 }) {
-  const [showFallback, setShowFallback] = useState(false);
-  const useFallback = isPersonal || !loadArtwork || showFallback;
+  const rpc = useRpc<typeof rpcContract>();
+  const [artwork, setArtwork] = useState<ProjectArtworkState>({ kind: "loading" });
+
+  useEffect(() => {
+    if (isPersonal || !loadArtwork) {
+      setArtwork({ kind: "fallback" });
+      return;
+    }
+
+    let cancelled = false;
+    setArtwork({ kind: "loading" });
+    void rpc.call("getProjectArtwork", { projectId }).then(
+      (result) => {
+        if (cancelled) return;
+        setArtwork(result.kind === "missing" ? { kind: "fallback" } : result);
+      },
+      () => {
+        if (!cancelled) setArtwork({ kind: "fallback" });
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [isPersonal, loadArtwork, projectId, rpc]);
+
+  const useTile = artwork.kind !== "image";
 
   return (
     <span
       aria-hidden="true"
       data-homepage-project-icon=""
       className={`flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-md ${
-        useFallback
+        useTile
           ? "bg-muted text-muted-foreground group-hover:text-foreground"
           : "bg-transparent"
       }`}
@@ -170,9 +219,7 @@ function ProjectIcon({
           : undefined
       }
     >
-      {useFallback ? (
-        <FolderIcon />
-      ) : (
+      {artwork.kind === "image" ? (
         <img
           alt=""
           className="size-8 object-contain"
@@ -180,8 +227,12 @@ function ProjectIcon({
           draggable={false}
           loading="lazy"
           src={`${PROJECT_ICON_URL}?projectId=${encodeURIComponent(projectId)}`}
-          onError={() => setShowFallback(true)}
+          onError={() => setArtwork({ kind: "fallback" })}
         />
+      ) : artwork.kind === "glyph" ? (
+        <GlyphIcon svg={artwork.svg} />
+      ) : (
+        <FolderIcon />
       )}
     </span>
   );

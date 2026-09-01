@@ -147,6 +147,9 @@ describe("project chat launcher", () => {
   it("keeps recent-activity order while highlighting and opening the selected project", async () => {
     const app = await loadPluginApp(() => import("../app"));
     const slot = renderSlot(app.homepageSections[0]!, { projectId: "project-2" }, {
+      rpc: {
+        getProjectArtwork: () => ({ kind: "image" }),
+      },
       sidebarThreads: {
         projects: [
           { id: "project-1", name: "Once", isPersonal: false },
@@ -174,7 +177,9 @@ describe("project chat launcher", () => {
     ]);
     expect(slot.getByRole("button", { name: "Start a new chat in Often" }).getAttribute("aria-current"))
       .toBe("page");
-    expect(slot.container.querySelectorAll('img[loading="lazy"]')).toHaveLength(3);
+    await waitFor(() => {
+      expect(slot.container.querySelectorAll('img[loading="lazy"]')).toHaveLength(3);
+    });
     expect(
       slot.container.querySelector("[data-homepage-project-icon]")?.className,
     ).not.toContain("bg-muted");
@@ -212,6 +217,7 @@ describe("project chat launcher", () => {
       }),
       resetHiddenProjects: () => ({ projectIds: [] }),
       renameProject: ({ projectId, name }) => ({ projectId, name }),
+      getProjectArtwork: () => ({ kind: "missing" }),
     };
     const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {
       rpc: pinHandlers,
@@ -250,6 +256,7 @@ describe("project chat launcher", () => {
       }),
       resetHiddenProjects: () => ({ projectIds: [] }),
       renameProject: ({ projectId, name }) => ({ projectId, name }),
+      getProjectArtwork: () => ({ kind: "missing" }),
     };
     const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {
       rpc: rpcHandlers,
@@ -391,6 +398,7 @@ describe("project chat launcher", () => {
       }),
       resetHiddenProjects: () => ({ projectIds: [] }),
       renameProject: ({ projectId, name }) => ({ projectId, name }),
+      getProjectArtwork: () => ({ kind: "missing" }),
     };
     const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {
       rpc: rpcHandlers,
@@ -760,6 +768,9 @@ describe("project chat launcher", () => {
   it("uses folder fallbacks for personal projects and failed images", async () => {
     const app = await loadPluginApp(() => import("../app"));
     const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {
+      rpc: {
+        getProjectArtwork: () => ({ kind: "image" }),
+      },
       sidebarThreads: {
         projects: [
           { id: "personal", name: "Personal", isPersonal: true },
@@ -769,6 +780,9 @@ describe("project chat launcher", () => {
       },
     });
 
+    await waitFor(() => {
+      expect(slot.container.querySelectorAll("img")).toHaveLength(1);
+    });
     const images = slot.container.querySelectorAll("img");
     expect(images).toHaveLength(1);
     expect(images[0]?.getAttribute("src")).toContain("projectId=work");
@@ -776,6 +790,33 @@ describe("project chat launcher", () => {
     expect(slot.container.querySelectorAll("img")).toHaveLength(0);
     expect(slot.container.querySelectorAll('svg[viewBox="0 0 24 24"]')).toHaveLength(2);
 
+    slot.lifecycle.unmount();
+  });
+
+  it("renders a declared BB glyph as a masked tile", async () => {
+    const app = await loadPluginApp(() => import("../app"));
+    const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {
+      rpc: {
+        getProjectArtwork: () => ({
+          kind: "glyph",
+          svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 3h6v6H3z"/></svg>',
+        }),
+      },
+      sidebarThreads: {
+        projects: [{ id: "homepage", name: "Homepage", isPersonal: false }],
+        threads: [],
+      },
+    });
+
+    await waitFor(() => {
+      expect(slot.container.querySelector("[data-homepage-project-glyph]")).not.toBeNull();
+    });
+    const glyph = slot.container.querySelector<HTMLElement>("[data-homepage-project-glyph]");
+    expect(glyph?.style.maskImage).toContain("data:image/svg+xml");
+    expect(
+      slot.container.querySelector("[data-homepage-project-icon]")?.className,
+    ).toContain("bg-muted");
+    expect(slot.container.querySelector("img")).toBeNull();
     slot.lifecycle.unmount();
   });
 });

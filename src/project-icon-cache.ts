@@ -1,5 +1,3 @@
-import type { ProjectIcon } from "./project-icons.js";
-
 export interface ProjectIconCacheOptions {
   maxEntries?: number;
   foundTtlMs?: number;
@@ -7,23 +5,23 @@ export interface ProjectIconCacheOptions {
   now?: () => number;
 }
 
-interface CacheEntry {
-  icon: ProjectIcon | null;
+interface CacheEntry<Value> {
+  icon: Value | null;
   expiresAt: number;
 }
 
-export class ProjectIconCache {
-  readonly #entries = new Map<string, CacheEntry>();
-  readonly #inFlight = new Map<string, Promise<ProjectIcon | null>>();
+export class ProjectIconCache<Value> {
+  readonly #entries = new Map<string, CacheEntry<Value>>();
+  readonly #inFlight = new Map<string, Promise<Value | null>>();
   readonly #abortController = new AbortController();
-  readonly #loader: (projectId: string, signal: AbortSignal) => Promise<ProjectIcon | null>;
+  readonly #loader: (projectId: string, signal: AbortSignal) => Promise<Value | null>;
   readonly #maxEntries: number;
   readonly #foundTtlMs: number;
   readonly #missingTtlMs: number;
   readonly #now: () => number;
 
   constructor(
-    loader: (projectId: string, signal: AbortSignal) => Promise<ProjectIcon | null>,
+    loader: (projectId: string, signal: AbortSignal) => Promise<Value | null>,
     options: ProjectIconCacheOptions = {},
   ) {
     this.#loader = loader;
@@ -33,7 +31,7 @@ export class ProjectIconCache {
     this.#now = options.now ?? Date.now;
   }
 
-  get(projectId: string): Promise<ProjectIcon | null> {
+  get(projectId: string): Promise<Value | null> {
     const cached = this.#entries.get(projectId);
     if (cached !== undefined && cached.expiresAt > this.#now()) {
       this.#entries.delete(projectId);
@@ -60,7 +58,7 @@ export class ProjectIconCache {
     this.#entries.clear();
   }
 
-  #store(projectId: string, icon: ProjectIcon | null): void {
+  #store(projectId: string, icon: Value | null): void {
     this.#entries.delete(projectId);
     this.#entries.set(projectId, {
       icon,

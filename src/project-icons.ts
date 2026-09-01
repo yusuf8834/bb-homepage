@@ -1,5 +1,7 @@
 import { SaxesParser } from "saxes";
 
+import { renderGlyphSvg } from "./glyphs.js";
+
 const PROJECT_ICON_EXTENSIONS = new Set(["svg", "png", "webp", "jpg", "jpeg", "ico"]);
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 const XLINK_NAMESPACE = "http://www.w3.org/1999/xlink";
@@ -45,18 +47,41 @@ export interface ProjectIconSource {
 }
 
 export interface ProjectIcon {
+  kind: "image";
   bytes: Uint8Array<ArrayBuffer>;
   mimeType: string;
 }
 
-export async function findProjectIcon(
+export interface ProjectGlyph {
+  kind: "glyph";
+  svg: string;
+}
+
+export type ProjectArtwork = ProjectGlyph | ProjectIcon;
+
+interface ManifestArtwork {
+  glyph: string | null;
+  path: string | null;
+}
+
+export async function findProjectArtwork(
   source: ProjectIconSource,
   projectId: string,
   signal: AbortSignal,
-): Promise<ProjectIcon | null> {
-  const manifestIcon = await readManifestIconPath(source, projectId, signal);
-  if (manifestIcon !== null) {
-    const declaredIcon = await readProjectIcon(source, projectId, manifestIcon, signal);
+): Promise<ProjectArtwork | null> {
+  const manifestArtwork = await readManifestArtwork(source, projectId, signal);
+  if (manifestArtwork.glyph !== null) {
+    const svg = renderGlyphSvg(manifestArtwork.glyph);
+    if (svg !== null) return { kind: "glyph", svg };
+  }
+
+  if (manifestArtwork.path !== null) {
+    const declaredIcon = await readProjectIcon(
+      source,
+      projectId,
+      manifestArtwork.path,
+      signal,
+    );
     if (declaredIcon !== null) return declaredIcon;
   }
 
@@ -65,11 +90,12 @@ export async function findProjectIcon(
     listProjectImageCandidates(source, projectId, "logo", signal),
   ]);
   const paths = new Set([...iconFiles, ...logoFiles]);
-  if (manifestIcon !== null) paths.delete(manifestIcon);
+  if (manifestArtwork.path !== null) paths.delete(manifestArtwork.path);
 
   const rankedPaths = Array.from(paths).sort(
     (left, right) =>
-      projectIconScore(right, manifestIcon) - projectIconScore(left, manifestIcon) ||
+      projectIconScore(right, manifestArtwork.path) -
+        projectIconScore(left, manifestArtwork.path) ||
       left.localeCompare(right),
   );
 
@@ -98,7 +124,7 @@ async function readProjectIcon(
       : new TextEncoder().encode(file.content);
     if (bytes.byteLength > PROJECT_ICON_MAX_BYTES) return null;
     if (mimeType === "image/svg+xml" && !isSafeSvg(bytes)) return null;
-    return { bytes, mimeType };
+    return { kind: "image", bytes, mimeType };
   } catch (error) {
     if (signal.aborted) throw error;
     // A stale, unreadable, or unsafe candidate should not hide the next match.
@@ -201,29 +227,49 @@ async function listProjectImageCandidates(
   }
 }
 
-async function readManifestIconPath(
+async function readManifestArtwork(
   source: ProjectIconSource,
   projectId: string,
   signal: AbortSignal,
-): Promise<string | null> {
+): Promise<ManifestArtwork> {
   try {
     const file = await source.readFile({ projectId, path: "package.json", signal });
     if (
       file.contentEncoding !== "utf8" ||
       file.sizeBytes > PROJECT_MANIFEST_MAX_BYTES
     ) {
-      return null;
+      return { glyph: null, path: null };
     }
 
     const manifest = JSON.parse(file.content) as {
       bb?: { branding?: { icon?: unknown; logo?: { light?: unknown } } };
     };
-    const declared = manifest.bb?.branding?.icon ?? manifest.bb?.branding?.logo?.light;
-    return typeof declared === "string" ? normalizeProjectIconPath(declared) : null;
+    const declaredIcon = manifest.bb?.branding?.icon;
+    if (typeof declaredIcon === "string") {
+      const path = normalizeProjectIconPath(declaredIcon);
+      if (path !== null) return { glyph: null, path };
+
+      const glyph = normalizeProjectGlyphName(declaredIcon);
+      if (glyph !== null) return { glyph, path: null };
+    }
+
+    const declaredLogo = manifest.bb?.branding?.logo?.light;
+    return {
+      glyph: null,
+      path:
+        typeof declaredLogo === "string"
+          ? normalizeProjectIconPath(declaredLogo)
+          : null,
+    };
   } catch (error) {
     if (signal.aborted) throw error;
-    return null;
+    return { glyph: null, path: null };
   }
+}
+
+export function normalizeProjectGlyphName(value: string): string | null {
+  const name = value.trim();
+  return /^[A-Za-z][A-Za-z0-9]{0,79}$/.test(name) ? name : null;
 }
 
 export function normalizeProjectIconPath(value: string): string | null {

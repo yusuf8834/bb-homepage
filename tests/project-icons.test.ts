@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   PROJECT_ICON_MAX_BYTES,
-  findProjectIcon,
+  findProjectArtwork,
   isSafeSvg,
+  normalizeProjectGlyphName,
   normalizeProjectIconPath,
   projectIconMimeType,
   projectIconScore,
@@ -21,6 +22,15 @@ describe("project icon policy", () => {
     ["icon.gif", null],
   ])("normalizes %s", (input, expected) => {
     expect(normalizeProjectIconPath(input)).toBe(expected);
+  });
+
+  it.each([
+    ["GridView", "GridView"],
+    [" GridView ", "GridView"],
+    ["./icons/project.svg", null],
+    ["grid-view", null],
+  ])("normalizes the glyph %s", (input, expected) => {
+    expect(normalizeProjectGlyphName(input)).toBe(expected);
   });
 
   it("prefers declared branding, then common public icons", () => {
@@ -42,7 +52,7 @@ describe("project icon policy", () => {
   });
 
   it("skips oversized candidates", async () => {
-    const icon = await findProjectIcon(
+    const icon = await findProjectArtwork(
       {
         listFiles: async ({ query }) => ({
           files: query === "icon" ? [{ path: "public/icon.png" }] : [],
@@ -66,7 +76,7 @@ describe("project icon policy", () => {
 
   it("returns a declared icon without running fuzzy project searches", async () => {
     let searches = 0;
-    const icon = await findProjectIcon(
+    const icon = await findProjectArtwork(
       {
         listFiles: async () => {
           searches += 1;
@@ -88,8 +98,69 @@ describe("project icon policy", () => {
       new AbortController().signal,
     );
 
-    expect(icon?.mimeType).toBe("image/svg+xml");
+    expect(icon).toMatchObject({ kind: "image", mimeType: "image/svg+xml" });
     expect(searches).toBe(0);
+  });
+
+  it("returns a declared BB glyph without searching project files", async () => {
+    let searches = 0;
+    const artwork = await findProjectArtwork(
+      {
+        listFiles: async () => {
+          searches += 1;
+          return { files: [] };
+        },
+        readFile: async () => {
+          const content = JSON.stringify({
+            bb: { branding: { icon: "GridView" } },
+          });
+          return {
+            content,
+            contentEncoding: "utf8",
+            mimeType: "application/json",
+            sizeBytes: content.length,
+          };
+        },
+      },
+      "project-1",
+      new AbortController().signal,
+    );
+
+    expect(artwork).toEqual({ kind: "glyph", svg: expect.stringContaining("<svg") });
+    expect(searches).toBe(0);
+  });
+
+  it("falls back to image discovery for an unknown glyph name", async () => {
+    const artwork = await findProjectArtwork(
+      {
+        listFiles: async ({ query }) => ({
+          files: query === "icon" ? [{ path: "public/icon.png" }] : [],
+        }),
+        readFile: async ({ path }) => {
+          if (path === "package.json") {
+            const content = JSON.stringify({
+              bb: { branding: { icon: "NotABbIcon" } },
+            });
+            return {
+              content,
+              contentEncoding: "utf8",
+              mimeType: "application/json",
+              sizeBytes: content.length,
+            };
+          }
+          return {
+            content: "iVBORw0KGgo=",
+            contentEncoding: "base64",
+            mimeType: "image/png",
+            sizeBytes: 8,
+          };
+        },
+      },
+      "project-1",
+      new AbortController().signal,
+    );
+
+    expect(artwork).toMatchObject({ kind: "image", mimeType: "image/png" });
   });
 
   it.each([
@@ -117,7 +188,7 @@ describe("project icon policy", () => {
   });
 
   it("skips an unsafe SVG and serves the next safe bitmap", async () => {
-    const icon = await findProjectIcon(
+    const icon = await findProjectArtwork(
       {
         listFiles: async ({ query }) => ({
           files: query === "icon"
@@ -141,6 +212,6 @@ describe("project icon policy", () => {
       new AbortController().signal,
     );
 
-    expect(icon?.mimeType).toBe("image/png");
+    expect(icon).toMatchObject({ kind: "image", mimeType: "image/png" });
   });
 });

@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented here.
 
+## Unreleased
+
+- Show projects whose `bb.branding.icon` names a BB icon, such as `GridView`,
+  with that glyph instead of the folder fallback.
+
 ## 0.2.0 - 2026-08-30
 
 - Add Manual sorting with full-card drag and drop. Clicks still open projects,

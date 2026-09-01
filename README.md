@@ -27,7 +27,8 @@ is intentionally separate from provider plugins.
 - Hide BB's built-in recent-chats section on the compose page so the launcher
   stays focused on starting new chats.
 - Load project artwork from declared BB branding or likely icon, favicon, and
-  logo files. Personal projects and projects without usable artwork display a
+  logo files. A named BB icon such as `GridView` is drawn as a theme-aware
+  glyph. Personal projects and projects without usable artwork display a
   folder icon.
 - Cache icon lookups, coalesce simultaneous requests, and briefly cache missing
   results.

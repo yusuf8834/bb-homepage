@@ -6,6 +6,7 @@ describe("package boundaries", () => {
     const result = experimental_scanPublicSdkOnly(new URL("../", import.meta.url).pathname, {
       allow: [
         /^react(?:\/.*)?$/,
+        /^@hugeicons\/core-free-icons$/,
         /^saxes$/,
         /^zod$/,
         /^@radix-ui\/react-context-menu$/,

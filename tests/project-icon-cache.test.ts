@@ -7,9 +7,9 @@ describe("project icon cache", () => {
   it("coalesces concurrent loads and caches successful results", async () => {
     let resolveLoad: ((value: typeof icon) => void) | undefined;
     let loads = 0;
-    const cache = new ProjectIconCache(() => {
+    const cache = new ProjectIconCache<typeof icon>(() => {
       loads += 1;
-      return new Promise((resolve) => {
+      return new Promise<typeof icon>((resolve) => {
         resolveLoad = resolve;
       });
     });

@@ -164,6 +164,45 @@ describe("project icon route", () => {
     expect(await response.text()).toContain("<svg");
   });
 
+  it("returns a named BB glyph through RPC without treating it as an image", async () => {
+    let searches = 0;
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "homepage",
+      sdk: {
+        projects: {
+          files: async () => {
+            searches += 1;
+            return { files: [], truncated: false };
+          },
+          fileContent: async ({ path }) => {
+            if (path !== "package.json") throw new Error("not found");
+            const content = JSON.stringify({
+              bb: { branding: { icon: "GridView" } },
+            });
+            return {
+              content,
+              contentEncoding: "utf8" as const,
+              mimeType: "application/json",
+              sizeBytes: content.length,
+            };
+          },
+        },
+      },
+    });
+    plugin(bb);
+
+    await expect(
+      harness.behavior.callRpc("getProjectArtwork", { projectId: "project-1" }),
+    ).resolves.toEqual({ kind: "glyph", svg: expect.stringContaining("<svg") });
+    expect(searches).toBe(0);
+
+    const response = await harness.behavior.fetchHttp(
+      "GET",
+      "/project-icon?projectId=project-1",
+    );
+    expect(response.status).toBe(404);
+  });
+
   it("tries the next ranked candidate when the first file is unreadable", async () => {
     const reads: string[] = [];
     const { bb, harness } = createFakePluginHost({
