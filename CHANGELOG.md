@@ -2,8 +2,12 @@
 
 All notable changes to this project are documented here.
 
-## Unreleased
+## 0.2.1 - 2026-09-02
 
+- Fill the compact homepage layout (phones and narrow windows) with the
+  launcher. BB reserved a short strip above the composer for its own
+  recent-chats list, which left the top of the screen empty once that list was
+  hidden.
 - Show projects whose `bb.branding.icon` names a BB icon, such as `GridView`,
   with that glyph instead of the folder fallback.
 

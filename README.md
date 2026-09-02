@@ -25,7 +25,8 @@ is intentionally separate from provider plugins.
   projects from plugin settings.
 - Respect reduced-motion preferences when drawing sparklines.
 - Hide BB's built-in recent-chats section on the compose page so the launcher
-  stays focused on starting new chats.
+  stays focused on starting new chats, and fill the compact phone and
+  narrow-window layout with the launcher instead of leaving that space empty.
 - Load project artwork from declared BB branding or likely icon, favicon, and
   logo files. A named BB icon such as `GridView` is drawn as a theme-aware
   glyph. Personal projects and projects without usable artwork display a

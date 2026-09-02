@@ -1,6 +1,6 @@
 {
   "name": "bb-plugin-homepage",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Configurable project shortcuts and safe project artwork for the BB homepage.",
   "license": "MIT",
   "keywords": [
