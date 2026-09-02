@@ -1144,7 +1144,26 @@ export default definePluginApp((app) => {
     mount() {
       const style = document.createElement("style");
       style.dataset.bbHomepageHideRecents = "";
-      style.textContent = "[data-root-compose-mobile-recents] { display: none !important; }";
+      style.textContent = `
+        [data-root-compose-mobile-recents] {
+          display: none !important;
+        }
+
+        /*
+         * bb's compact home anchors a short scroll viewport just above the
+         * composer (sized for its own recent-chats list), which leaves the
+         * top of the screen empty once that list is hidden. Extend the
+         * viewport up to the host's minimum toolbar clearance so the project
+         * launcher fills the page instead.
+         */
+        [data-testid="root-compose-compact-scroll-viewport"] {
+          top: calc(56px + env(safe-area-inset-top, 0px)) !important;
+        }
+
+        [data-testid="root-compose-compact-recents-offset"] {
+          height: 0 !important;
+        }
+      `;
       document.head.append(style);
 
       return () => style.remove();

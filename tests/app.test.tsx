@@ -72,10 +72,16 @@ function firePointer(
 }
 
 describe("project chat launcher", () => {
-  it("hides the main-page recent chats section and cleans up on disposal", async () => {
+  it("fills the compact homepage viewport and cleans up on disposal", async () => {
     const recents = document.createElement("section");
     recents.dataset.rootComposeMobileRecents = "";
     document.body.append(recents);
+
+    const viewport = document.createElement("div");
+    viewport.dataset.testid = "root-compose-compact-scroll-viewport";
+    const offset = document.createElement("div");
+    offset.dataset.testid = "root-compose-compact-recents-offset";
+    document.body.append(viewport, offset);
 
     const app = await loadPluginApp(() => import("../app"));
     const scripts = await mountPluginContentScripts(app, { pluginId: "homepage" });
@@ -83,7 +89,18 @@ describe("project chat launcher", () => {
 
     expect(scripts.inspection.mountedIds).toEqual(["hide-homepage-recent-chats"]);
     expect(style?.textContent).toContain("[data-root-compose-mobile-recents]");
+    expect(style?.textContent).toContain(
+      '[data-testid="root-compose-compact-scroll-viewport"]',
+    );
+    expect(style?.textContent).toContain(
+      '[data-testid="root-compose-compact-recents-offset"]',
+    );
     expect(window.getComputedStyle(recents).display).toBe("none");
+    // jsdom drops declarations using env(), so only the rule text is checked here.
+    expect(style?.textContent).toContain(
+      "top: calc(56px + env(safe-area-inset-top, 0px)) !important",
+    );
+    expect(window.getComputedStyle(offset).height).toBe("0px");
 
     await scripts.lifecycle.dispose();
     expect(style?.isConnected).toBe(false);
