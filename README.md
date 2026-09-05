@@ -23,8 +23,9 @@ is intentionally separate from provider plugins.
   in Manual mode. Pinned projects sync across windows.
 - Create custom project groups from the launcher. Use a project's right-click
   menu to move it into a group, or drag it between group sections in Manual
-  mode. Drag group headers to reorder them. Groups, assignments, and group
-  order sync across windows.
+  mode. Click a group name to collapse it, or drag its header to reorder it.
+  Groups, assignments, and group order sync across windows; collapsed groups
+  are remembered in the current browser.
 - Rename or hide a project from its right-click menu. Restore all hidden
   projects from plugin settings.
 - Respect reduced-motion preferences when drawing sparklines.

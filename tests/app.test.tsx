@@ -385,6 +385,58 @@ describe("project chat launcher", () => {
     slot.lifecycle.unmount();
   });
 
+  it("collapses project groups and remembers the choice", async () => {
+    const groups = [{ id: "work", name: "Work", projectIds: ["alpha"] }];
+    const app = await loadPluginApp(() => import("../app"));
+    const renderLauncher = () => renderSlot(
+      app.homepageSections[0]!,
+      { projectId: null },
+      {
+        rpc: {
+          listPinnedProjects: () => ({ projectIds: [] }),
+          listProjectGroups: () => ({ groups }),
+        },
+        sidebarThreads: {
+          projects: [{ id: "alpha", name: "Alpha", isPersonal: false }],
+          threads: [],
+        },
+      },
+    );
+    const slot = renderLauncher();
+
+    const collapse = await slot.findByRole("button", {
+      name: "Collapse Work group",
+    });
+    expect(slot.getByRole("button", {
+      name: "Start a new chat in Alpha",
+    })).not.toBeNull();
+    fireEvent.click(collapse);
+
+    expect(slot.queryByRole("button", {
+      name: "Start a new chat in Alpha",
+    })).toBeNull();
+    expect(slot.getByRole("button", {
+      name: "Expand Work group",
+    }).getAttribute("aria-expanded")).toBe("false");
+    expect(JSON.parse(
+      window.localStorage.getItem("bb-plugin-homepage:collapsed-project-groups") ?? "[]",
+    )).toEqual(["work"]);
+    slot.lifecycle.unmount();
+
+    const restored = renderLauncher();
+    const expand = await restored.findByRole("button", {
+      name: "Expand Work group",
+    });
+    expect(restored.queryByRole("button", {
+      name: "Start a new chat in Alpha",
+    })).toBeNull();
+    fireEvent.click(expand);
+    expect(await restored.findByRole("button", {
+      name: "Start a new chat in Alpha",
+    })).not.toBeNull();
+    restored.lifecycle.unmount();
+  });
+
   it("moves a project into a custom group by dragging in Manual mode", async () => {
     window.localStorage.setItem("bb-plugin-homepage:ranking-mode", "Manual");
     let groups = [{ id: "work", name: "Work", projectIds: ["alpha"] }];

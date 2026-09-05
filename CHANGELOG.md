@@ -10,6 +10,7 @@ All notable changes to this project are documented here.
   return to it when unpinned.
 - Reorder groups by dragging their headers or using Move up and Move down in
   the group actions menu.
+- Collapse or expand a group from its header and remember the choice locally.
 
 ## 0.2.1 - 2026-09-02
 

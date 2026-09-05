@@ -29,6 +29,7 @@ import {
 const PROJECT_ICON_URL = "/api/v1/plugins/homepage/http/project-icon";
 const RANKING_STORAGE_KEY = "bb-plugin-homepage:ranking-mode";
 const MANUAL_ORDER_STORAGE_KEY = "bb-plugin-homepage:manual-project-order";
+const COLLAPSED_GROUPS_STORAGE_KEY = "bb-plugin-homepage:collapsed-project-groups";
 const DRAG_ACTIVATION_DISTANCE = 8;
 let hasAnimatedProjectLauncher = false;
 
@@ -476,6 +477,9 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
   const sortPointerSelectionRef = useRef(false);
   const [pinnedIds, setPinnedIds] = useState<readonly string[]>([]);
   const [projectGroups, setProjectGroups] = useState<readonly ProjectGroup[]>([]);
+  const [collapsedGroupIds, setCollapsedGroupIds] = useState<readonly string[]>(
+    readCollapsedGroupIds,
+  );
   const [groupEditor, setGroupEditor] = useState<GroupEditor | null>(null);
   const [groupName, setGroupName] = useState("");
   const [groupError, setGroupError] = useState<string | null>(null);
@@ -735,6 +739,11 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
       return;
     }
     setProjectGroups((current) => current.filter((candidate) => candidate.id !== group.id));
+    setCollapsedGroupIds((current) => {
+      const next = current.filter((groupId) => groupId !== group.id);
+      storeCollapsedGroupIds(next);
+      return next;
+    });
     void rpc.call("deleteProjectGroup", { groupId: group.id }).then(
       ({ groups }) => setProjectGroups(groups),
       () => {
@@ -744,6 +753,16 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
         );
       },
     );
+  }
+
+  function toggleGroupCollapsed(groupId: string): void {
+    setCollapsedGroupIds((current) => {
+      const next = current.includes(groupId)
+        ? current.filter((candidate) => candidate !== groupId)
+        : [...current, groupId];
+      storeCollapsedGroupIds(next);
+      return next;
+    });
   }
 
   function saveGroupOrder(groups: readonly ProjectGroup[]): void {
@@ -1451,7 +1470,9 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
           key={group.id}
           data-project-group-id={group.id}
           data-project-section={`group:${group.id}`}
-          className={`group/section relative mb-4 ${
+          className={`group/section relative ${
+            collapsedGroupIds.includes(group.id) ? "mb-2" : "mb-4"
+          } ${
             draggedGroupId === group.id ? "opacity-50" : ""
           }`}
         >
@@ -1467,7 +1488,9 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
           <div
             data-project-group-header=""
             title="Drag to reorder groups"
-            className={`group/header mb-2 flex cursor-grab select-none items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider transition-colors ${
+            className={`group/header flex cursor-grab select-none items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider transition-colors ${
+              collapsedGroupIds.includes(group.id) ? "mb-0" : "mb-2"
+            } ${
               draggedGroupId === group.id ? "cursor-grabbing" : ""
             } ${
               sectionDropTarget === `group:${group.id}`
@@ -1533,8 +1556,33 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
                 />
               </svg>
             </span>
-            <span className="truncate">{group.name}</span>
-            <span className="text-[10px] tabular-nums">{projectsInGroup.length}</span>
+            <button
+              type="button"
+              aria-expanded={!collapsedGroupIds.includes(group.id)}
+              aria-label={`${
+                collapsedGroupIds.includes(group.id) ? "Expand" : "Collapse"
+              } ${group.name} group`}
+              className="flex min-w-0 items-center gap-1 rounded-sm text-left outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              onClick={() => toggleGroupCollapsed(group.id)}
+            >
+              <span className="truncate">{group.name}</span>
+              <svg
+                viewBox="0 0 12 12"
+                fill="none"
+                className={`size-3 shrink-0 transition-transform ${
+                  collapsedGroupIds.includes(group.id) ? "-rotate-90" : ""
+                }`}
+                aria-hidden="true"
+              >
+                <path
+                  d="m3 4.5 3 3 3-3"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
             <DropdownMenu.Root modal={false}>
               <DropdownMenu.Trigger asChild>
                 <button
@@ -1596,7 +1644,7 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
               <span className="flex-1" />
             )}
           </div>
-          {projectsInGroup.length > 0 ? (
+          {collapsedGroupIds.includes(group.id) ? null : projectsInGroup.length > 0 ? (
             <div className="grid gap-2 sm:grid-cols-2">
               {projectsInGroup.map(renderProject)}
             </div>
@@ -1667,6 +1715,35 @@ function readManualOrder(): readonly string[] {
     return [...uniqueIds];
   } catch {
     return [];
+  }
+}
+
+function readCollapsedGroupIds(): readonly string[] {
+  try {
+    const stored: unknown = JSON.parse(
+      window.localStorage.getItem(COLLAPSED_GROUPS_STORAGE_KEY) ?? "[]",
+    );
+    if (!Array.isArray(stored)) return [];
+
+    const uniqueIds = new Set<string>();
+    for (const value of stored) {
+      if (typeof value === "string" && value.length > 0) uniqueIds.add(value);
+      if (uniqueIds.size === 100) break;
+    }
+    return [...uniqueIds];
+  } catch {
+    return [];
+  }
+}
+
+function storeCollapsedGroupIds(groupIds: readonly string[]): void {
+  try {
+    window.localStorage.setItem(
+      COLLAPSED_GROUPS_STORAGE_KEY,
+      JSON.stringify(groupIds),
+    );
+  } catch {
+    // Browser storage can be unavailable; collapsing still works for this page.
   }
 }
 
