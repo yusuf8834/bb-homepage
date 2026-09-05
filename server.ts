@@ -10,6 +10,18 @@ const FOUND_CACHE_CONTROL = "private, max-age=300";
 const MISSING_CACHE_CONTROL = "private, max-age=60";
 const PINNED_PROJECTS_KEY = "pinned-projects";
 const HIDDEN_PROJECTS_KEY = "hidden-projects";
+const PROJECT_GROUPS_KEY = "project-groups";
+const MAX_PROJECT_GROUPS = 100;
+
+const projectGroupSchema = z
+  .object({
+    id: z.string().min(1).max(100),
+    name: z.string().trim().min(1).max(80),
+    projectIds: z.array(z.string().min(1)).max(10_000),
+  })
+  .strict();
+
+export type ProjectGroup = z.infer<typeof projectGroupSchema>;
 
 export const rpcContract = defineRpcContract({
   listPinnedProjects: {
@@ -19,6 +31,41 @@ export const rpcContract = defineRpcContract({
   setProjectPinned: {
     input: z.object({ projectId: z.string().min(1), pinned: z.boolean() }).strict(),
     output: z.object({ projectIds: z.array(z.string()) }),
+  },
+  listProjectGroups: {
+    input: z.null(),
+    output: z.object({ groups: z.array(projectGroupSchema) }),
+  },
+  createProjectGroup: {
+    input: z
+      .object({
+        name: z.string().trim().min(1).max(80),
+        projectId: z.string().min(1).optional(),
+      })
+      .strict(),
+    output: z.object({ groups: z.array(projectGroupSchema) }),
+  },
+  renameProjectGroup: {
+    input: z
+      .object({
+        groupId: z.string().min(1),
+        name: z.string().trim().min(1).max(80),
+      })
+      .strict(),
+    output: z.object({ groups: z.array(projectGroupSchema) }),
+  },
+  deleteProjectGroup: {
+    input: z.object({ groupId: z.string().min(1) }).strict(),
+    output: z.object({ groups: z.array(projectGroupSchema) }),
+  },
+  setProjectGroup: {
+    input: z
+      .object({
+        projectId: z.string().min(1),
+        groupId: z.string().min(1).nullable(),
+      })
+      .strict(),
+    output: z.object({ groups: z.array(projectGroupSchema) }),
   },
   listHiddenProjects: {
     input: z.null(),
@@ -92,6 +139,35 @@ export default function plugin(bb: BbPluginApi) {
     )].slice(0, 10_000);
   }
 
+  async function readProjectGroups(): Promise<ProjectGroup[]> {
+    const stored = await bb.storage.kv.get<unknown>(PROJECT_GROUPS_KEY);
+    if (!Array.isArray(stored)) return [];
+
+    const groups: ProjectGroup[] = [];
+    const groupIds = new Set<string>();
+    const assignedProjectIds = new Set<string>();
+    for (const value of stored) {
+      const parsed = projectGroupSchema.safeParse(value);
+      if (!parsed.success || groupIds.has(parsed.data.id)) continue;
+
+      groupIds.add(parsed.data.id);
+      const projectIds = [...new Set(parsed.data.projectIds)].filter((projectId) => {
+        if (assignedProjectIds.has(projectId)) return false;
+        assignedProjectIds.add(projectId);
+        return true;
+      });
+      groups.push({ ...parsed.data, projectIds });
+      if (groups.length === MAX_PROJECT_GROUPS) break;
+    }
+    return groups;
+  }
+
+  async function writeProjectGroups(groups: ProjectGroup[]): Promise<ProjectGroup[]> {
+    await bb.storage.kv.set(PROJECT_GROUPS_KEY, groups);
+    bb.realtime.publish("project-groups-changed", null);
+    return groups;
+  }
+
   bb.rpc.register(rpcContract, {
     async listPinnedProjects() {
       return { projectIds: await readPinnedProjects() };
@@ -108,6 +184,62 @@ export default function plugin(bb: BbPluginApi) {
         bb.realtime.publish("pins-changed", null);
       }
       return { projectIds: next };
+    },
+    async listProjectGroups() {
+      return { groups: await readProjectGroups() };
+    },
+    async createProjectGroup({ name, projectId }) {
+      const current = await readProjectGroups();
+      if (current.length >= MAX_PROJECT_GROUPS) {
+        throw new Error(`A maximum of ${MAX_PROJECT_GROUPS} project groups is allowed.`);
+      }
+
+      const groups = projectId
+        ? current.map((group) => ({
+            ...group,
+            projectIds: group.projectIds.filter((id) => id !== projectId),
+          }))
+        : current;
+      groups.push({
+        id: crypto.randomUUID(),
+        name,
+        projectIds: projectId ? [projectId] : [],
+      });
+      return { groups: await writeProjectGroups(groups) };
+    },
+    async renameProjectGroup({ groupId, name }) {
+      const current = await readProjectGroups();
+      if (!current.some((group) => group.id === groupId)) {
+        throw new Error("Project group not found.");
+      }
+      const groups = current.map((group) =>
+        group.id === groupId ? { ...group, name } : group,
+      );
+      return { groups: await writeProjectGroups(groups) };
+    },
+    async deleteProjectGroup({ groupId }) {
+      const current = await readProjectGroups();
+      const groups = current.filter((group) => group.id !== groupId);
+      if (groups.length === current.length) return { groups: current };
+      return { groups: await writeProjectGroups(groups) };
+    },
+    async setProjectGroup({ projectId, groupId }) {
+      const current = await readProjectGroups();
+      if (groupId !== null && !current.some((group) => group.id === groupId)) {
+        throw new Error("Project group not found.");
+      }
+      const groups = current.map((group) => ({
+        ...group,
+        projectIds: group.projectIds.filter((id) => id !== projectId),
+      }));
+      if (groupId !== null) {
+        const target = groups.find((group) => group.id === groupId)!;
+        target.projectIds.push(projectId);
+      }
+      const changed = current.some((group, index) =>
+        group.projectIds.join("\0") !== groups[index]!.projectIds.join("\0"),
+      );
+      return { groups: changed ? await writeProjectGroups(groups) : current };
     },
     async listHiddenProjects() {
       return { projectIds: await readHiddenProjects() };

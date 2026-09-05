@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## Unreleased
+
+- Add synced custom project groups with create, rename, and delete controls.
+- Move projects into groups from the right-click menu or by dragging between
+  sections in Manual mode. Pinned projects keep their group assignment and
+  return to it when unpinned.
+
 ## 0.2.1 - 2026-09-02
 
 - Fill the compact homepage layout (phones and narrow windows) with the

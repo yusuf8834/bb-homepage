@@ -228,6 +228,11 @@ describe("project chat launcher", () => {
       setProjectPinned: ({ projectId, pinned }) => ({
         projectIds: pinned ? ["beta", projectId] : [],
       }),
+      listProjectGroups: () => ({ groups: [] }),
+      createProjectGroup: () => ({ groups: [] }),
+      renameProjectGroup: () => ({ groups: [] }),
+      deleteProjectGroup: () => ({ groups: [] }),
+      setProjectGroup: () => ({ groups: [] }),
       listHiddenProjects: () => ({ projectIds: [] }),
       setProjectHidden: ({ projectId, hidden }) => ({
         projectIds: hidden ? [projectId] : [],
@@ -267,6 +272,11 @@ describe("project chat launcher", () => {
       setProjectPinned: ({ projectId, pinned }) => ({
         projectIds: pinned ? [projectId] : [],
       }),
+      listProjectGroups: () => ({ groups: [] }),
+      createProjectGroup: () => ({ groups: [] }),
+      renameProjectGroup: () => ({ groups: [] }),
+      deleteProjectGroup: () => ({ groups: [] }),
+      setProjectGroup: () => ({ groups: [] }),
       listHiddenProjects: () => ({ projectIds: [] }),
       setProjectHidden: ({ projectId, hidden }) => ({
         projectIds: hidden ? [projectId] : [],
@@ -330,6 +340,121 @@ describe("project chat launcher", () => {
     });
     expect(slot.queryByRole("button", { name: /pin alpha/i })).toBeNull();
 
+    slot.lifecycle.unmount();
+  });
+
+  it("creates a custom group with hover-revealed management actions", async () => {
+    let groups: Array<{ id: string; name: string; projectIds: string[] }> = [];
+    const app = await loadPluginApp(() => import("../app"));
+    const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {
+      rpc: {
+        listProjectGroups: () => ({ groups }),
+        createProjectGroup: (input: unknown) => {
+          const { name, projectId } = input as { name: string; projectId?: string };
+          groups = [{ id: "clients", name, projectIds: projectId ? [projectId] : [] }];
+          return { groups };
+        },
+      },
+      sidebarThreads: {
+        projects: [{ id: "alpha", name: "Alpha", isPersonal: false }],
+        threads: [],
+      },
+    });
+
+    fireEvent.click(slot.getByRole("button", { name: "New group" }));
+    const createForm = slot.getByRole("form", { name: "Create project group" });
+    fireEvent.change(slot.getByLabelText("Group name"), {
+      target: { value: "Client work" },
+    });
+    fireEvent.submit(createForm);
+
+    await slot.findByText("Client work");
+    expect(slot.inspection.rpcCalls).toContainEqual({
+      method: "createProjectGroup",
+      input: { name: "Client work" },
+    });
+
+    const clientActions = slot.getByRole("button", {
+      name: "Manage Client work group",
+    });
+    expect(clientActions.className).toContain("group-hover/section:opacity-100");
+    expect(clientActions.closest('[data-project-section="group:clients"]'))
+      .not.toBeNull();
+    slot.lifecycle.unmount();
+  });
+
+  it("moves a project into a custom group by dragging in Manual mode", async () => {
+    window.localStorage.setItem("bb-plugin-homepage:ranking-mode", "Manual");
+    let groups = [{ id: "work", name: "Work", projectIds: ["alpha"] }];
+    const app = await loadPluginApp(() => import("../app"));
+    const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {
+      rpc: {
+        listPinnedProjects: () => ({ projectIds: [] }),
+        listProjectGroups: () => ({ groups }),
+        setProjectGroup: (input: unknown) => {
+          const { projectId, groupId } = input as {
+            projectId: string;
+            groupId: string | null;
+          };
+          groups = groups.map((group) => ({
+            ...group,
+            projectIds: group.id === groupId
+              ? [...group.projectIds.filter((id) => id !== projectId), projectId]
+              : group.projectIds.filter((id) => id !== projectId),
+          }));
+          return { groups };
+        },
+      },
+      sidebarThreads: {
+        projects: [
+          { id: "alpha", name: "Alpha", isPersonal: false },
+          { id: "beta", name: "Beta", isPersonal: false },
+        ],
+        threads: [],
+      },
+    });
+    await slot.findByText("Work");
+
+    const beta = slot
+      .getByRole("button", { name: "Start a new chat in Beta" })
+      .closest<HTMLElement>("[data-project-id]");
+    const groupSection = slot.container.querySelector<HTMLElement>(
+      '[data-project-section="group:work"]',
+    );
+    pointAt(beta!);
+    firePointer(beta!, "pointerdown", {
+      button: 0,
+      clientX: 10,
+      clientY: 100,
+      pointerId: 2,
+    });
+    firePointer(beta!, "pointermove", {
+      clientX: 10,
+      clientY: 80,
+      pointerId: 2,
+    });
+    pointAt(groupSection!);
+    firePointer(beta!, "pointermove", {
+      clientX: 10,
+      clientY: 40,
+      pointerId: 2,
+    });
+    expect(
+      groupSection?.querySelector('[data-section-drop-accent="group:work"]'),
+    ).not.toBeNull();
+    firePointer(beta!, "pointerup", {
+      clientX: 10,
+      clientY: 40,
+      pointerId: 2,
+    });
+
+    await waitFor(() => {
+      expect(slot.inspection.rpcCalls).toContainEqual({
+        method: "setProjectGroup",
+        input: { projectId: "beta", groupId: "work" },
+      });
+    });
+    expect(groupSection?.querySelector('[data-project-id="beta"]')).not.toBeNull();
     slot.lifecycle.unmount();
   });
 
@@ -409,6 +534,11 @@ describe("project chat launcher", () => {
     const rpcHandlers: PluginRpcTestHandlers<typeof rpcContract> = {
       listPinnedProjects: () => ({ projectIds: [] }),
       setProjectPinned: () => ({ projectIds: [] }),
+      listProjectGroups: () => ({ groups: [] }),
+      createProjectGroup: () => ({ groups: [] }),
+      renameProjectGroup: () => ({ groups: [] }),
+      deleteProjectGroup: () => ({ groups: [] }),
+      setProjectGroup: () => ({ groups: [] }),
       listHiddenProjects: () => ({ projectIds: [] }),
       setProjectHidden: ({ projectId, hidden }) => ({
         projectIds: hidden ? [projectId] : [],
@@ -467,7 +597,11 @@ describe("project chat launcher", () => {
     expect(sparkline.querySelectorAll("path")).toHaveLength(2);
     expect(sparkline.querySelectorAll("circle")).toHaveLength(1);
     expect(slot.queryByRole("img", { name: /^Idle:/ })).toBeNull();
-    expect(slot.container.querySelectorAll('svg[viewBox="0 0 16 16"]')).toHaveLength(2);
+    expect(
+      slot.container.querySelectorAll(
+        'button[aria-label^="Start a new chat"] svg[viewBox="0 0 16 16"]',
+      ),
+    ).toHaveLength(2);
 
     slot.lifecycle.unmount();
   });

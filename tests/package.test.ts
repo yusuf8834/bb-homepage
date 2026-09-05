@@ -10,6 +10,7 @@ describe("package boundaries", () => {
         /^saxes$/,
         /^zod$/,
         /^@radix-ui\/react-context-menu$/,
+        /^@radix-ui\/react-dropdown-menu$/,
         /^@testing-library\/react$/,
         /^vitest\/config$/,
       ],

@@ -71,6 +71,70 @@ describe("pinned projects", () => {
   });
 });
 
+describe("project groups", () => {
+  it("creates, renames, assigns, and deletes synced groups", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "homepage" });
+    plugin(bb);
+
+    await expect(harness.behavior.callRpc("listProjectGroups")).resolves.toEqual({
+      groups: [],
+    });
+    const first = await harness.behavior.callRpc("createProjectGroup", {
+      name: "  Client work  ",
+      projectId: "alpha",
+    }) as { groups: Array<{ id: string; name: string; projectIds: string[] }> };
+    expect(first.groups).toEqual([
+      {
+        id: expect.any(String),
+        name: "Client work",
+        projectIds: ["alpha"],
+      },
+    ]);
+
+    const second = await harness.behavior.callRpc("createProjectGroup", {
+      name: "Internal",
+    }) as { groups: Array<{ id: string; name: string; projectIds: string[] }> };
+    const clientGroupId = second.groups[0]!.id;
+    const internalGroupId = second.groups[1]!.id;
+    await expect(
+      harness.behavior.callRpc("setProjectGroup", {
+        projectId: "alpha",
+        groupId: internalGroupId,
+      }),
+    ).resolves.toMatchObject({
+      groups: [
+        { id: clientGroupId, projectIds: [] },
+        { id: internalGroupId, projectIds: ["alpha"] },
+      ],
+    });
+    await expect(
+      harness.behavior.callRpc("renameProjectGroup", {
+        groupId: internalGroupId,
+        name: "Product",
+      }),
+    ).resolves.toMatchObject({
+      groups: [{ name: "Client work" }, { name: "Product" }],
+    });
+    await expect(
+      harness.behavior.callRpc("deleteProjectGroup", { groupId: internalGroupId }),
+    ).resolves.toMatchObject({
+      groups: [{ id: clientGroupId, projectIds: [] }],
+    });
+  });
+
+  it("rejects assignments to a missing group", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "homepage" });
+    plugin(bb);
+
+    await expect(
+      harness.behavior.callRpc("setProjectGroup", {
+        projectId: "alpha",
+        groupId: "missing",
+      }),
+    ).rejects.toThrow("Project group not found");
+  });
+});
+
 describe("hidden projects", () => {
   it("persists hidden projects and resets them", async () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "homepage" });

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as ContextMenu from "@radix-ui/react-context-menu";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   definePluginApp,
   experimental_useSidebarThreadActions,
@@ -16,7 +17,7 @@ import type {
 } from "@get-bb/plugin-sdk/app";
 import { buildNewChatActivityByProject } from "./src/activity.js";
 import { formatRelativeTime } from "./src/relative-time.js";
-import type { rpcContract } from "./server.js";
+import type { ProjectGroup, rpcContract } from "./server.js";
 import {
   parseHomepageSettings,
   parseRankingMode,
@@ -50,6 +51,12 @@ interface ProjectDropTarget {
   projectId: string;
   position: "after" | "before";
 }
+
+type ProjectSectionId = "pinned" | "ungrouped" | `group:${string}`;
+
+type GroupEditor =
+  | { mode: "create"; projectId?: string }
+  | { mode: "rename"; groupId: string };
 
 interface PointerDragGesture {
   projectId: string;
@@ -447,14 +454,19 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
   const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<ProjectDropTarget | null>(null);
   const [sectionDropTarget, setSectionDropTarget] = useState<
-    "pinned" | "unpinned" | null
+    ProjectSectionId | null
   >(null);
   const pointerDragRef = useRef<PointerDragGesture | null>(null);
   const dropTargetRef = useRef<ProjectDropTarget | null>(null);
-  const sectionDropTargetRef = useRef<"pinned" | "unpinned" | null>(null);
+  const sectionDropTargetRef = useRef<ProjectSectionId | null>(null);
   const suppressClickRef = useRef<string | null>(null);
   const sortPointerSelectionRef = useRef(false);
   const [pinnedIds, setPinnedIds] = useState<readonly string[]>([]);
+  const [projectGroups, setProjectGroups] = useState<readonly ProjectGroup[]>([]);
+  const [groupEditor, setGroupEditor] = useState<GroupEditor | null>(null);
+  const [groupName, setGroupName] = useState("");
+  const [groupError, setGroupError] = useState<string | null>(null);
+  const [isSavingGroup, setIsSavingGroup] = useState(false);
   useEffect(() => {
     let cancelled = false;
     void rpc.call("listPinnedProjects").then(
@@ -472,6 +484,26 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
   useRealtime("pins-changed", () => {
     void rpc.call("listPinnedProjects").then(
       ({ projectIds }) => setPinnedIds(projectIds),
+      () => {},
+    );
+  });
+  useEffect(() => {
+    let cancelled = false;
+    void rpc.call("listProjectGroups").then(
+      ({ groups }) => {
+        if (!cancelled) setProjectGroups(groups);
+      },
+      () => {
+        // Custom groups are optional; projects still appear in All projects.
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  useRealtime("project-groups-changed", () => {
+    void rpc.call("listProjectGroups").then(
+      ({ groups }) => setProjectGroups(groups),
       () => {},
     );
   });
@@ -510,6 +542,16 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
       return changed ? next : current;
     });
   }, [projects]);
+
+  const projectGroupIds = useMemo(() => {
+    const groupIds = new Map<string, string>();
+    for (const group of projectGroups) {
+      for (const groupedProjectId of group.projectIds) {
+        if (!groupIds.has(groupedProjectId)) groupIds.set(groupedProjectId, group.id);
+      }
+    }
+    return groupIds;
+  }, [projectGroups]);
 
   if (status === "loading") {
     return (
@@ -581,14 +623,107 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
     targetId: string,
     position: "after" | "before",
   ): void {
-    if (pinnedIds.includes(sourceId) !== pinnedIds.includes(targetId)) return;
+    if (projectSectionFor(sourceId) !== projectSectionFor(targetId)) return;
     moveProjectInManualOrder(sourceId, targetId, position);
+  }
+
+  function projectSectionFor(targetId: string): ProjectSectionId {
+    if (pinnedIds.includes(targetId)) return "pinned";
+    const groupId = projectGroupIds.get(targetId);
+    return groupId ? `group:${groupId}` : "ungrouped";
   }
 
   function togglePin(targetId: string, pinned: boolean): void {
     void rpc.call("setProjectPinned", { projectId: targetId, pinned }).then(
       ({ projectIds }) => setPinnedIds(projectIds),
       () => {},
+    );
+  }
+
+  function assignProjectToGroup(targetId: string, groupId: string | null): void {
+    setProjectGroups((current) => current.map((group) => ({
+      ...group,
+      projectIds: group.id === groupId
+        ? [...group.projectIds.filter((id) => id !== targetId), targetId]
+        : group.projectIds.filter((id) => id !== targetId),
+    })));
+    void rpc.call("setProjectGroup", { projectId: targetId, groupId }).then(
+      ({ groups }) => setProjectGroups(groups),
+      () => {
+        void rpc.call("listProjectGroups").then(
+          ({ groups }) => setProjectGroups(groups),
+          () => {},
+        );
+      },
+    );
+  }
+
+  function openCreateGroup(projectId?: string): void {
+    setGroupEditor({ mode: "create", projectId });
+    setGroupName("");
+    setGroupError(null);
+  }
+
+  function openRenameGroup(group: ProjectGroup): void {
+    setGroupEditor({ mode: "rename", groupId: group.id });
+    setGroupName(group.name);
+    setGroupError(null);
+  }
+
+  function closeGroupEditor(): void {
+    if (isSavingGroup) return;
+    setGroupEditor(null);
+    setGroupName("");
+    setGroupError(null);
+  }
+
+  function submitGroup(): void {
+    if (!groupEditor || isSavingGroup) return;
+    const name = groupName.trim();
+    if (!name) {
+      setGroupError("Enter a group name.");
+      return;
+    }
+
+    setIsSavingGroup(true);
+    setGroupError(null);
+    const request = groupEditor.mode === "create"
+      ? rpc.call("createProjectGroup", {
+          name,
+          ...(groupEditor.projectId ? { projectId: groupEditor.projectId } : {}),
+        })
+      : rpc.call("renameProjectGroup", { groupId: groupEditor.groupId, name });
+    void request.then(
+      ({ groups }) => {
+        setProjectGroups(groups);
+        setGroupEditor(null);
+        setGroupName("");
+        setIsSavingGroup(false);
+      },
+      () => {
+        setGroupError(
+          groupEditor.mode === "create"
+            ? "Group could not be created."
+            : "Group could not be renamed.",
+        );
+        setIsSavingGroup(false);
+      },
+    );
+  }
+
+  function deleteGroup(group: ProjectGroup): void {
+    if (!window.confirm(`Delete the group "${group.name}"? Its projects will return to All projects.`)) {
+      return;
+    }
+    setProjectGroups((current) => current.filter((candidate) => candidate.id !== group.id));
+    void rpc.call("deleteProjectGroup", { groupId: group.id }).then(
+      ({ groups }) => setProjectGroups(groups),
+      () => {
+        void rpc.call("listProjectGroups").then(
+          ({ groups }) => setProjectGroups(groups),
+          () => {},
+        );
+      },
     );
   }
 
@@ -612,7 +747,7 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
     setDropTarget(next);
   }
 
-  function updateSectionDropTarget(next: "pinned" | "unpinned" | null): void {
+  function updateSectionDropTarget(next: ProjectSectionId | null): void {
     sectionDropTargetRef.current = next;
     setSectionDropTarget(next);
   }
@@ -626,21 +761,28 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
     setSectionDropTarget(null);
   }
 
-  function moveProjectToSection(sourceId: string, targetPinned: boolean): void {
-    if (pinnedIds.includes(sourceId) === targetPinned) {
-      return;
-    }
+  function moveProjectToSection(sourceId: string, sectionId: ProjectSectionId): void {
+    if (projectSectionFor(sourceId) === sectionId) return;
 
     const destinationProjects = rankedProjects.filter(
       (project) =>
         project.id !== sourceId &&
-        pinnedIds.includes(project.id) === targetPinned,
+        projectSectionFor(project.id) === sectionId,
     );
     const lastDestination = destinationProjects.at(-1);
     if (lastDestination) {
       moveProjectInManualOrder(sourceId, lastDestination.id, "after");
     }
-    togglePin(sourceId, targetPinned);
+    if (sectionId === "pinned") {
+      togglePin(sourceId, true);
+      return;
+    }
+
+    if (pinnedIds.includes(sourceId)) togglePin(sourceId, false);
+    assignProjectToGroup(
+      sourceId,
+      sectionId.startsWith("group:") ? sectionId.slice("group:".length) : null,
+    );
   }
 
   function updatePointerDropTarget(clientX: number, clientY: number): void {
@@ -652,8 +794,8 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
     if (targetCard) {
       const targetId = targetCard.dataset.projectId;
       if (targetId && targetId !== gesture.projectId) {
-        const sourceIsPinned = pinnedIds.includes(gesture.projectId);
-        if (pinnedIds.includes(targetId) === sourceIsPinned) {
+        const sourceSection = projectSectionFor(gesture.projectId);
+        if (projectSectionFor(targetId) === sourceSection) {
           const bounds = targetCard.getBoundingClientRect();
           updateDropTarget({
             projectId: targetId,
@@ -667,12 +809,10 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
     }
 
     const targetSection = hit?.closest<HTMLElement>("[data-project-section]");
-    const section = targetSection?.dataset.projectSection;
-    const targetPinned = section === "pinned";
-    if (
-      (section === "pinned" || section === "unpinned") &&
-      pinnedIds.includes(gesture.projectId) !== targetPinned
-    ) {
+    const section = targetSection?.dataset.projectSection as
+      | ProjectSectionId
+      | undefined;
+    if (section && projectSectionFor(gesture.projectId) !== section) {
       updateDropTarget(null);
       updateSectionDropTarget(section);
       return;
@@ -696,7 +836,7 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
       if (target) {
         reorderProject(projectId, target.projectId, target.position);
       } else if (targetSection) {
-        moveProjectToSection(projectId, targetSection === "pinned");
+        moveProjectToSection(projectId, targetSection);
       }
 
       suppressClickRef.current = projectId;
@@ -765,20 +905,28 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
       : pinnedIds
           .map((id) => rankedProjects.find((project) => project.id === id))
           .filter((project): project is RankedProject => project !== undefined);
-  const unpinnedProjects = rankedProjects.filter(
-    (project) => !pinnedIds.includes(project.id),
+  const groupedProjects = projectGroups.map((group) => ({
+    group,
+    projects: rankedProjects.filter(
+      (project) =>
+        !pinnedIds.includes(project.id) && projectGroupIds.get(project.id) === group.id,
+    ),
+  }));
+  const ungroupedProjects = rankedProjects.filter(
+    (project) =>
+      !pinnedIds.includes(project.id) && !projectGroupIds.has(project.id),
   );
   const isManualDragging = rankingMode === "Manual" && draggedProjectId !== null;
   const showPinnedSection = pinnedProjects.length > 0 || isManualDragging;
-  const showUnpinnedSection =
-    unpinnedProjects.length > 0 ||
-    (isManualDragging &&
-      draggedProjectId !== null &&
-      pinnedIds.includes(draggedProjectId));
+  const showUngroupedSection =
+    ungroupedProjects.length > 0 ||
+    (isManualDragging && draggedProjectId !== null &&
+      projectSectionFor(draggedProjectId) !== "ungrouped");
 
   function renderProject(project: RankedProject) {
     const isCurrent = project.id === activeProjectId;
     const isPinned = pinnedIds.includes(project.id);
+    const currentGroupId = projectGroupIds.get(project.id) ?? null;
     const isEditing = renameTarget?.id === project.id;
     const isManual = rankingMode === "Manual";
     const isDragging = draggedProjectId === project.id;
@@ -986,6 +1134,46 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
             >
               {isPinned ? "Unpin" : "Pin"}
             </ContextMenu.Item>
+            <ContextMenu.Sub>
+              <ContextMenu.SubTrigger className={`${menuItemClassName} justify-between`}>
+                <span>Move to group</span>
+                <span aria-hidden="true">›</span>
+              </ContextMenu.SubTrigger>
+              <ContextMenu.Portal>
+                <ContextMenu.SubContent className="z-50 min-w-[10rem] rounded-md border border-border bg-card p-1 shadow-md">
+                  <ContextMenu.Item
+                    className={menuItemClassName}
+                    disabled={currentGroupId === null}
+                    onSelect={() => assignProjectToGroup(project.id, null)}
+                  >
+                    <span className="w-3" aria-hidden="true">
+                      {currentGroupId === null ? "✓" : ""}
+                    </span>
+                    No group
+                  </ContextMenu.Item>
+                  {projectGroups.map((group) => (
+                    <ContextMenu.Item
+                      key={group.id}
+                      className={menuItemClassName}
+                      disabled={currentGroupId === group.id}
+                      onSelect={() => assignProjectToGroup(project.id, group.id)}
+                    >
+                      <span className="w-3" aria-hidden="true">
+                        {currentGroupId === group.id ? "✓" : ""}
+                      </span>
+                      {group.name}
+                    </ContextMenu.Item>
+                  ))}
+                  <ContextMenu.Separator className="my-1 h-px bg-border" />
+                  <ContextMenu.Item
+                    className={menuItemClassName}
+                    onSelect={() => openCreateGroup(project.id)}
+                  >
+                    New group...
+                  </ContextMenu.Item>
+                </ContextMenu.SubContent>
+              </ContextMenu.Portal>
+            </ContextMenu.Sub>
             {!project.isPersonal ? (
               <ContextMenu.Item
                 className={menuItemClassName}
@@ -1010,8 +1198,24 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
     <div className="relative">
       <div
         data-homepage-sort=""
-        className="absolute -top-9 right-0 z-10 flex items-center justify-end"
+        className="absolute -top-9 right-0 z-10 flex items-center justify-end gap-2"
       >
+        <button
+          type="button"
+          aria-label="New group"
+          title="New group"
+          className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-state-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          onClick={() => openCreateGroup()}
+        >
+          <svg viewBox="0 0 16 16" fill="none" className="size-5" aria-hidden="true">
+            <path
+              d="M8 3.25v9.5M3.25 8h9.5"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+            />
+          </svg>
+        </button>
         <label className="flex items-center gap-2 text-xs text-muted-foreground">
           <span>Sort</span>
           <select
@@ -1040,6 +1244,64 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
           </select>
         </label>
       </div>
+      {groupEditor ? (
+        <form
+          aria-label={groupEditor.mode === "create" ? "Create project group" : "Rename project group"}
+          className="mb-4 rounded-lg border border-border bg-card p-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            submitGroup();
+          }}
+        >
+          <label className="block text-xs font-medium text-foreground">
+            Group name
+            <input
+              autoFocus
+              aria-invalid={groupError ? "true" : undefined}
+              disabled={isSavingGroup}
+              maxLength={80}
+              value={groupName}
+              className="mt-1.5 h-8 w-full rounded-md border border-border bg-background px-2.5 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/20"
+              onChange={(event) => {
+                setGroupName(event.target.value);
+                setGroupError(null);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  closeGroupEditor();
+                }
+              }}
+            />
+          </label>
+          {groupError ? (
+            <p role="alert" className="mt-1.5 text-xs text-destructive">
+              {groupError}
+            </p>
+          ) : null}
+          <div className="mt-3 flex justify-end gap-2">
+            <button
+              type="button"
+              disabled={isSavingGroup}
+              className="h-8 rounded-md px-3 text-xs font-medium text-muted-foreground hover:bg-state-hover hover:text-foreground disabled:opacity-50"
+              onClick={closeGroupEditor}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isSavingGroup}
+              className="h-8 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground disabled:opacity-50"
+            >
+              {isSavingGroup
+                ? "Saving..."
+                : groupEditor.mode === "create"
+                  ? "Create group"
+                  : "Save"}
+            </button>
+          </div>
+        </form>
+      ) : null}
       {showPinnedSection ? (
         <div
           data-project-section="pinned"
@@ -1075,35 +1337,108 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
           )}
         </div>
       ) : null}
-      {showUnpinnedSection ? (
+      {groupedProjects.map(({ group, projects: projectsInGroup }) => (
         <div
-          data-project-section="unpinned"
+          key={group.id}
+          data-project-section={`group:${group.id}`}
+          className="group/section mb-4"
         >
-          {showPinnedSection ? (
+          <div
+            className={`mb-2 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider transition-colors ${
+              sectionDropTarget === `group:${group.id}`
+                ? "text-primary"
+                : "text-muted-foreground"
+            }`}
+          >
+            <FolderIcon />
+            <span className="truncate">{group.name}</span>
+            <span className="text-[10px] tabular-nums">{projectsInGroup.length}</span>
+            <DropdownMenu.Root modal={false}>
+              <DropdownMenu.Trigger asChild>
+                <button
+                  type="button"
+                  aria-label={`Manage ${group.name} group`}
+                  title="Group actions"
+                  className="flex size-6 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-[color,background-color,opacity] hover:bg-state-hover hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring group-hover/section:opacity-100 data-[state=open]:bg-state-hover data-[state=open]:opacity-100 [@media(hover:none)]:opacity-50"
+                >
+                  <svg viewBox="0 0 16 16" fill="currentColor" className="size-4" aria-hidden="true">
+                    <circle cx="3" cy="8" r="1.1" />
+                    <circle cx="8" cy="8" r="1.1" />
+                    <circle cx="13" cy="8" r="1.1" />
+                  </svg>
+                </button>
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content
+                  align="start"
+                  sideOffset={4}
+                  className="z-50 min-w-[8rem] rounded-md border border-border bg-card p-1 normal-case tracking-normal shadow-md"
+                >
+                  <DropdownMenu.Item
+                    className="cursor-default select-none rounded-sm px-2 py-1.5 text-sm text-foreground outline-none data-[highlighted]:bg-state-hover"
+                    onSelect={() => openRenameGroup(group)}
+                  >
+                    Rename
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item
+                    className="cursor-default select-none rounded-sm px-2 py-1.5 text-sm text-destructive outline-none data-[highlighted]:bg-destructive/10"
+                    onSelect={() => deleteGroup(group)}
+                  >
+                    Delete group
+                  </DropdownMenu.Item>
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Root>
+            {sectionDropTarget === `group:${group.id}` ? (
+              <span
+                aria-hidden="true"
+                data-section-drop-accent={`group:${group.id}`}
+                className="h-px flex-1 bg-primary"
+              />
+            ) : (
+              <span className="flex-1" />
+            )}
+          </div>
+          {projectsInGroup.length > 0 ? (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {projectsInGroup.map(renderProject)}
+            </div>
+          ) : (
+            <div className="rounded-lg border border-dashed border-border px-4 py-3 text-center text-xs text-muted-foreground">
+              {isManualDragging ? "Drop here to move" : "No projects in this group"}
+            </div>
+          )}
+        </div>
+      ))}
+      {showUngroupedSection ? (
+        <div
+          data-project-section="ungrouped"
+        >
+          {showPinnedSection || projectGroups.length > 0 ? (
             <p
               className={`mb-2 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider transition-colors ${
-                sectionDropTarget === "unpinned"
+                sectionDropTarget === "ungrouped"
                   ? "text-primary"
                   : "text-muted-foreground"
               }`}
             >
               <span>All projects</span>
-              {sectionDropTarget === "unpinned" ? (
+              {sectionDropTarget === "ungrouped" ? (
                 <span
                   aria-hidden="true"
-                  data-section-drop-accent="unpinned"
+                  data-section-drop-accent="ungrouped"
                   className="h-px flex-1 bg-primary"
                 />
               ) : null}
             </p>
           ) : null}
-          {unpinnedProjects.length > 0 ? (
+          {ungroupedProjects.length > 0 ? (
             <div className="grid gap-2 sm:grid-cols-2">
-              {unpinnedProjects.map(renderProject)}
+              {ungroupedProjects.map(renderProject)}
             </div>
           ) : (
             <div className="rounded-lg border border-dashed border-border px-4 py-3 text-center text-xs text-muted-foreground">
-              Drop here to unpin
+              Drop here to remove from its section
             </div>
           )}
         </div>
