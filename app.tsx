@@ -52,6 +52,11 @@ interface ProjectDropTarget {
   position: "after" | "before";
 }
 
+interface GroupDropTarget {
+  groupId: string;
+  position: "after" | "before";
+}
+
 type ProjectSectionId = "pinned" | "ungrouped" | `group:${string}`;
 
 type GroupEditor =
@@ -60,6 +65,14 @@ type GroupEditor =
 
 interface PointerDragGesture {
   projectId: string;
+  pointerId: number;
+  startX: number;
+  startY: number;
+  started: boolean;
+}
+
+interface GroupPointerDragGesture {
+  groupId: string;
   pointerId: number;
   startX: number;
   startY: number;
@@ -467,6 +480,12 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
   const [groupName, setGroupName] = useState("");
   const [groupError, setGroupError] = useState<string | null>(null);
   const [isSavingGroup, setIsSavingGroup] = useState(false);
+  const [draggedGroupId, setDraggedGroupId] = useState<string | null>(null);
+  const [groupDropTarget, setGroupDropTarget] = useState<GroupDropTarget | null>(
+    null,
+  );
+  const groupPointerDragRef = useRef<GroupPointerDragGesture | null>(null);
+  const groupDropTargetRef = useRef<GroupDropTarget | null>(null);
   useEffect(() => {
     let cancelled = false;
     void rpc.call("listPinnedProjects").then(
@@ -725,6 +744,96 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
         );
       },
     );
+  }
+
+  function saveGroupOrder(groups: readonly ProjectGroup[]): void {
+    setProjectGroups(groups);
+    void rpc.call("reorderProjectGroups", {
+      groupIds: groups.map((group) => group.id),
+    }).then(
+      ({ groups: savedGroups }) => setProjectGroups(savedGroups),
+      () => {
+        void rpc.call("listProjectGroups").then(
+          ({ groups: savedGroups }) => setProjectGroups(savedGroups),
+          () => {},
+        );
+      },
+    );
+  }
+
+  function moveGroup(
+    sourceId: string,
+    targetId: string,
+    position: "after" | "before",
+  ): void {
+    if (sourceId === targetId) return;
+    const groups = [...projectGroups];
+    const sourceIndex = groups.findIndex((group) => group.id === sourceId);
+    if (sourceIndex === -1 || !groups.some((group) => group.id === targetId)) return;
+
+    const [movedGroup] = groups.splice(sourceIndex, 1);
+    const targetIndex = groups.findIndex((group) => group.id === targetId);
+    groups.splice(position === "after" ? targetIndex + 1 : targetIndex, 0, movedGroup!);
+    saveGroupOrder(groups);
+  }
+
+  function moveGroupByOffset(groupId: string, offset: -1 | 1): void {
+    const index = projectGroups.findIndex((group) => group.id === groupId);
+    const target = projectGroups[index + offset];
+    if (!target) return;
+    moveGroup(groupId, target.id, offset === -1 ? "before" : "after");
+  }
+
+  function updateGroupDropTarget(next: GroupDropTarget | null): void {
+    groupDropTargetRef.current = next;
+    setGroupDropTarget(next);
+  }
+
+  function updateGroupPointerDropTarget(clientX: number, clientY: number): void {
+    const gesture = groupPointerDragRef.current;
+    if (!gesture?.started) return;
+
+    const hit = document.elementFromPoint(clientX, clientY) as HTMLElement | null;
+    const targetGroup = hit?.closest<HTMLElement>("[data-project-group-id]") ?? null;
+    const targetId = targetGroup?.dataset.projectGroupId;
+    if (!targetGroup || !targetId || targetId === gesture.groupId) {
+      updateGroupDropTarget(null);
+      return;
+    }
+
+    const targetHeader = targetGroup.querySelector<HTMLElement>(
+      "[data-project-group-header]",
+    );
+    const bounds = (targetHeader ?? targetGroup).getBoundingClientRect();
+    updateGroupDropTarget({
+      groupId: targetId,
+      position: clientY < bounds.top + bounds.height / 2 ? "before" : "after",
+    });
+  }
+
+  function clearGroupDragState(): void {
+    groupPointerDragRef.current = null;
+    groupDropTargetRef.current = null;
+    setDraggedGroupId(null);
+    setGroupDropTarget(null);
+  }
+
+  function finishGroupPointerDrag(
+    groupId: string,
+    currentTarget: HTMLElement,
+    pointerId: number,
+  ): void {
+    const gesture = groupPointerDragRef.current;
+    if (!gesture || gesture.pointerId !== pointerId) return;
+
+    const target = groupDropTargetRef.current;
+    if (gesture.started && target) {
+      moveGroup(groupId, target.groupId, target.position);
+    }
+    if (currentTarget.hasPointerCapture?.(pointerId)) {
+      currentTarget.releasePointerCapture(pointerId);
+    }
+    clearGroupDragState();
   }
 
   function hideProject(targetId: string): void {
@@ -1337,20 +1446,93 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
           )}
         </div>
       ) : null}
-      {groupedProjects.map(({ group, projects: projectsInGroup }) => (
+      {groupedProjects.map(({ group, projects: projectsInGroup }, groupIndex) => (
         <div
           key={group.id}
+          data-project-group-id={group.id}
           data-project-section={`group:${group.id}`}
-          className="group/section mb-4"
+          className={`group/section relative mb-4 ${
+            draggedGroupId === group.id ? "opacity-50" : ""
+          }`}
         >
+          {groupDropTarget?.groupId === group.id ? (
+            <span
+              aria-hidden="true"
+              data-group-drop-accent={groupDropTarget.position}
+              className={`pointer-events-none absolute left-0 right-0 z-20 h-0.5 rounded-full bg-primary ${
+                groupDropTarget.position === "before" ? "-top-1" : "bottom-0"
+              }`}
+            />
+          ) : null}
           <div
-            className={`mb-2 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider transition-colors ${
+            data-project-group-header=""
+            title="Drag to reorder groups"
+            className={`group/header mb-2 flex cursor-grab select-none items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider transition-colors ${
+              draggedGroupId === group.id ? "cursor-grabbing" : ""
+            } ${
               sectionDropTarget === `group:${group.id}`
                 ? "text-primary"
                 : "text-muted-foreground"
             }`}
+            onPointerDown={(event) => {
+              if (
+                event.button > 0 ||
+                event.isPrimary === false ||
+                (event.target as HTMLElement).closest?.("button")
+              ) {
+                return;
+              }
+              groupPointerDragRef.current = {
+                groupId: group.id,
+                pointerId: event.pointerId,
+                startX: event.clientX,
+                startY: event.clientY,
+                started: false,
+              };
+            }}
+            onPointerMove={(event) => {
+              const gesture = groupPointerDragRef.current;
+              if (!gesture || gesture.pointerId !== event.pointerId) return;
+              if (!gesture.started) {
+                const distance = Math.hypot(
+                  event.clientX - gesture.startX,
+                  event.clientY - gesture.startY,
+                );
+                if (distance < DRAG_ACTIVATION_DISTANCE) return;
+                gesture.started = true;
+                setDraggedGroupId(gesture.groupId);
+                event.currentTarget.setPointerCapture?.(event.pointerId);
+              }
+              event.preventDefault();
+              updateGroupPointerDropTarget(event.clientX, event.clientY);
+            }}
+            onPointerUp={(event) => {
+              finishGroupPointerDrag(group.id, event.currentTarget, event.pointerId);
+            }}
+            onPointerCancel={(event) => {
+              if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+                event.currentTarget.releasePointerCapture(event.pointerId);
+              }
+              clearGroupDragState();
+            }}
           >
-            <FolderIcon />
+            <span aria-hidden="true" className="relative size-4 shrink-0">
+              <span className="absolute inset-0 transition-opacity group-hover/header:opacity-0 [@media(hover:none)]:opacity-0">
+                <FolderIcon />
+              </span>
+              <svg
+                viewBox="0 0 12 16"
+                fill="none"
+                className="absolute inset-0 h-4 w-3 opacity-0 transition-opacity group-hover/header:opacity-100 [@media(hover:none)]:opacity-100"
+              >
+                <path
+                  d="M3.5 4h.01M8.5 4h.01M3.5 8h.01M8.5 8h.01M3.5 12h.01M8.5 12h.01"
+                  stroke="currentColor"
+                  strokeWidth="2.1"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </span>
             <span className="truncate">{group.name}</span>
             <span className="text-[10px] tabular-nums">{projectsInGroup.length}</span>
             <DropdownMenu.Root modal={false}>
@@ -1374,6 +1556,21 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
                   sideOffset={4}
                   className="z-50 min-w-[8rem] rounded-md border border-border bg-card p-1 normal-case tracking-normal shadow-md"
                 >
+                  <DropdownMenu.Item
+                    disabled={groupIndex === 0}
+                    className="cursor-default select-none rounded-sm px-2 py-1.5 text-sm text-foreground outline-none data-[disabled]:opacity-40 data-[highlighted]:bg-state-hover"
+                    onSelect={() => moveGroupByOffset(group.id, -1)}
+                  >
+                    Move up
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item
+                    disabled={groupIndex === groupedProjects.length - 1}
+                    className="cursor-default select-none rounded-sm px-2 py-1.5 text-sm text-foreground outline-none data-[disabled]:opacity-40 data-[highlighted]:bg-state-hover"
+                    onSelect={() => moveGroupByOffset(group.id, 1)}
+                  >
+                    Move down
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Separator className="my-1 h-px bg-border" />
                   <DropdownMenu.Item
                     className="cursor-default select-none rounded-sm px-2 py-1.5 text-sm text-foreground outline-none data-[highlighted]:bg-state-hover"
                     onSelect={() => openRenameGroup(group)}

@@ -8,6 +8,8 @@ All notable changes to this project are documented here.
 - Move projects into groups from the right-click menu or by dragging between
   sections in Manual mode. Pinned projects keep their group assignment and
   return to it when unpinned.
+- Reorder groups by dragging their headers or using Move up and Move down in
+  the group actions menu.
 
 ## 0.2.1 - 2026-09-02
 

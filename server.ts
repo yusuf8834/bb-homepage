@@ -58,6 +58,12 @@ export const rpcContract = defineRpcContract({
     input: z.object({ groupId: z.string().min(1) }).strict(),
     output: z.object({ groups: z.array(projectGroupSchema) }),
   },
+  reorderProjectGroups: {
+    input: z
+      .object({ groupIds: z.array(z.string().min(1)).max(MAX_PROJECT_GROUPS) })
+      .strict(),
+    output: z.object({ groups: z.array(projectGroupSchema) }),
+  },
   setProjectGroup: {
     input: z
       .object({
@@ -221,6 +227,20 @@ export default function plugin(bb: BbPluginApi) {
       const current = await readProjectGroups();
       const groups = current.filter((group) => group.id !== groupId);
       if (groups.length === current.length) return { groups: current };
+      return { groups: await writeProjectGroups(groups) };
+    },
+    async reorderProjectGroups({ groupIds }) {
+      const current = await readProjectGroups();
+      const groupsById = new Map(current.map((group) => [group.id, group]));
+      const orderedIds = [...new Set(groupIds)].filter((id) => groupsById.has(id));
+      const requestedIds = new Set(orderedIds);
+      const groups = [
+        ...orderedIds.map((id) => groupsById.get(id)!),
+        ...current.filter((group) => !requestedIds.has(group.id)),
+      ];
+      if (groups.every((group, index) => group.id === current[index]?.id)) {
+        return { groups: current };
+      }
       return { groups: await writeProjectGroups(groups) };
     },
     async setProjectGroup({ projectId, groupId }) {

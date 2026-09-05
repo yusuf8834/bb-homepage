@@ -133,6 +133,31 @@ describe("project groups", () => {
       }),
     ).rejects.toThrow("Project group not found");
   });
+
+  it("persists group order while preserving groups omitted by a stale client", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "homepage" });
+    plugin(bb);
+
+    const first = await harness.behavior.callRpc("createProjectGroup", {
+      name: "First",
+    }) as { groups: Array<{ id: string }> };
+    const second = await harness.behavior.callRpc("createProjectGroup", {
+      name: "Second",
+    }) as { groups: Array<{ id: string }> };
+    const firstId = first.groups[0]!.id;
+    const secondId = second.groups[1]!.id;
+
+    await expect(
+      harness.behavior.callRpc("reorderProjectGroups", {
+        groupIds: [secondId],
+      }),
+    ).resolves.toMatchObject({
+      groups: [{ id: secondId }, { id: firstId }],
+    });
+    await expect(harness.behavior.callRpc("listProjectGroups")).resolves.toMatchObject({
+      groups: [{ id: secondId }, { id: firstId }],
+    });
+  });
 });
 
 describe("hidden projects", () => {

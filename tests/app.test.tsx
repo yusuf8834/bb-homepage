@@ -232,6 +232,7 @@ describe("project chat launcher", () => {
       createProjectGroup: () => ({ groups: [] }),
       renameProjectGroup: () => ({ groups: [] }),
       deleteProjectGroup: () => ({ groups: [] }),
+      reorderProjectGroups: () => ({ groups: [] }),
       setProjectGroup: () => ({ groups: [] }),
       listHiddenProjects: () => ({ projectIds: [] }),
       setProjectHidden: ({ projectId, hidden }) => ({
@@ -276,6 +277,7 @@ describe("project chat launcher", () => {
       createProjectGroup: () => ({ groups: [] }),
       renameProjectGroup: () => ({ groups: [] }),
       deleteProjectGroup: () => ({ groups: [] }),
+      reorderProjectGroups: () => ({ groups: [] }),
       setProjectGroup: () => ({ groups: [] }),
       listHiddenProjects: () => ({ projectIds: [] }),
       setProjectHidden: ({ projectId, hidden }) => ({
@@ -458,6 +460,82 @@ describe("project chat launcher", () => {
     slot.lifecycle.unmount();
   });
 
+  it("reorders custom groups by dragging their headers", async () => {
+    let groups = [
+      { id: "first", name: "First", projectIds: ["alpha"] },
+      { id: "second", name: "Second", projectIds: ["beta"] },
+    ];
+    const app = await loadPluginApp(() => import("../app"));
+    const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {
+      rpc: {
+        listProjectGroups: () => ({ groups }),
+        reorderProjectGroups: (input: unknown) => {
+          const { groupIds } = input as { groupIds: string[] };
+          const groupsById = new Map(groups.map((group) => [group.id, group]));
+          groups = groupIds.map((groupId) => groupsById.get(groupId)!);
+          return { groups };
+        },
+      },
+      sidebarThreads: {
+        projects: [
+          { id: "alpha", name: "Alpha", isPersonal: false },
+          { id: "beta", name: "Beta", isPersonal: false },
+        ],
+        threads: [],
+      },
+    });
+    await slot.findByRole("button", { name: "Manage Second group" });
+
+    const firstGroup = slot.container.querySelector<HTMLElement>(
+      '[data-project-group-id="first"]',
+    );
+    const secondGroup = slot.container.querySelector<HTMLElement>(
+      '[data-project-group-id="second"]',
+    );
+    const firstHeader = firstGroup?.querySelector<HTMLElement>(
+      "[data-project-group-header]",
+    );
+    const secondHeader = secondGroup?.querySelector<HTMLElement>(
+      "[data-project-group-header]",
+    );
+    Object.defineProperty(firstHeader, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({ top: 100, height: 24 }),
+    });
+    pointAt(firstGroup!);
+    firePointer(secondHeader!, "pointerdown", {
+      button: 0,
+      clientX: 20,
+      clientY: 200,
+      pointerId: 3,
+    });
+    firePointer(secondHeader!, "pointermove", {
+      clientX: 20,
+      clientY: 90,
+      pointerId: 3,
+    });
+    expect(
+      firstGroup?.querySelector('[data-group-drop-accent="before"]'),
+    ).not.toBeNull();
+    firePointer(secondHeader!, "pointerup", {
+      clientX: 20,
+      clientY: 90,
+      pointerId: 3,
+    });
+
+    await waitFor(() => {
+      expect(slot.inspection.rpcCalls).toContainEqual({
+        method: "reorderProjectGroups",
+        input: { groupIds: ["second", "first"] },
+      });
+    });
+    expect(
+      Array.from(slot.container.querySelectorAll("[data-project-group-id]"))
+        .map((element) => element.getAttribute("data-project-group-id")),
+    ).toEqual(["second", "first"]);
+    slot.lifecycle.unmount();
+  });
+
   it("wires a context menu trigger onto each project card", async () => {
     const app = await loadPluginApp(() => import("../app"));
     const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {
@@ -538,6 +616,7 @@ describe("project chat launcher", () => {
       createProjectGroup: () => ({ groups: [] }),
       renameProjectGroup: () => ({ groups: [] }),
       deleteProjectGroup: () => ({ groups: [] }),
+      reorderProjectGroups: () => ({ groups: [] }),
       setProjectGroup: () => ({ groups: [] }),
       listHiddenProjects: () => ({ projectIds: [] }),
       setProjectHidden: ({ projectId, hidden }) => ({
