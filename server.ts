@@ -12,6 +12,7 @@ const PINNED_PROJECTS_KEY = "pinned-projects";
 const HIDDEN_PROJECTS_KEY = "hidden-projects";
 const PROJECT_GROUPS_KEY = "project-groups";
 const MAX_PROJECT_GROUPS = 100;
+const MAX_STORED_PROJECT_IDS = 10_000;
 
 const projectGroupSchema = z
   .object({
@@ -129,20 +130,23 @@ export default function plugin(bb: BbPluginApi) {
     },
   });
 
-  async function readPinnedProjects(): Promise<string[]> {
-    const stored = await bb.storage.kv.get<unknown>(PINNED_PROJECTS_KEY);
-    if (!Array.isArray(stored)) return [];
-    return stored.filter((value): value is string => typeof value === "string");
-  }
-
-  async function readHiddenProjects(): Promise<string[]> {
-    const stored = await bb.storage.kv.get<unknown>(HIDDEN_PROJECTS_KEY);
+  function normalizeStoredProjectIds(stored: unknown): string[] {
     if (!Array.isArray(stored)) return [];
     return [...new Set(
       stored.filter((value): value is string =>
         typeof value === "string" && value.length > 0,
       ),
-    )].slice(0, 10_000);
+    )].slice(0, MAX_STORED_PROJECT_IDS);
+  }
+
+  async function readPinnedProjects(): Promise<string[]> {
+    const stored = await bb.storage.kv.get<unknown>(PINNED_PROJECTS_KEY);
+    return normalizeStoredProjectIds(stored);
+  }
+
+  async function readHiddenProjects(): Promise<string[]> {
+    const stored = await bb.storage.kv.get<unknown>(HIDDEN_PROJECTS_KEY);
+    return normalizeStoredProjectIds(stored);
   }
 
   async function readProjectGroups(): Promise<ProjectGroup[]> {
@@ -174,116 +178,144 @@ export default function plugin(bb: BbPluginApi) {
     return groups;
   }
 
+  let preferenceMutationTail: Promise<void> = Promise.resolve();
+  function runPreferenceMutation<Result>(
+    mutation: () => Promise<Result>,
+  ): Promise<Result> {
+    const result = preferenceMutationTail.then(mutation);
+    preferenceMutationTail = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
+
   bb.rpc.register(rpcContract, {
     async listPinnedProjects() {
       return { projectIds: await readPinnedProjects() };
     },
-    async setProjectPinned({ projectId, pinned }) {
-      const current = await readPinnedProjects();
-      const next = pinned
-        ? current.includes(projectId)
-          ? current
-          : [...current, projectId]
-        : current.filter((id) => id !== projectId);
-      if (next.length !== current.length) {
-        await bb.storage.kv.set(PINNED_PROJECTS_KEY, next);
-        bb.realtime.publish("pins-changed", null);
-      }
-      return { projectIds: next };
+    setProjectPinned({ projectId, pinned }) {
+      return runPreferenceMutation(async () => {
+        const current = await readPinnedProjects();
+        const next = pinned
+          ? current.includes(projectId)
+            ? current
+            : [...current, projectId]
+          : current.filter((id) => id !== projectId);
+        if (next.length !== current.length) {
+          await bb.storage.kv.set(PINNED_PROJECTS_KEY, next);
+          bb.realtime.publish("pins-changed", null);
+        }
+        return { projectIds: next };
+      });
     },
     async listProjectGroups() {
       return { groups: await readProjectGroups() };
     },
-    async createProjectGroup({ name, projectId }) {
-      const current = await readProjectGroups();
-      if (current.length >= MAX_PROJECT_GROUPS) {
-        throw new Error(`A maximum of ${MAX_PROJECT_GROUPS} project groups is allowed.`);
-      }
+    createProjectGroup({ name, projectId }) {
+      return runPreferenceMutation(async () => {
+        const current = await readProjectGroups();
+        if (current.length >= MAX_PROJECT_GROUPS) {
+          throw new Error(`A maximum of ${MAX_PROJECT_GROUPS} project groups is allowed.`);
+        }
 
-      const groups = projectId
-        ? current.map((group) => ({
-            ...group,
-            projectIds: group.projectIds.filter((id) => id !== projectId),
-          }))
-        : current;
-      groups.push({
-        id: crypto.randomUUID(),
-        name,
-        projectIds: projectId ? [projectId] : [],
+        const groups = projectId
+          ? current.map((group) => ({
+              ...group,
+              projectIds: group.projectIds.filter((id) => id !== projectId),
+            }))
+          : [...current];
+        groups.push({
+          id: crypto.randomUUID(),
+          name,
+          projectIds: projectId ? [projectId] : [],
+        });
+        return { groups: await writeProjectGroups(groups) };
       });
-      return { groups: await writeProjectGroups(groups) };
     },
-    async renameProjectGroup({ groupId, name }) {
-      const current = await readProjectGroups();
-      if (!current.some((group) => group.id === groupId)) {
-        throw new Error("Project group not found.");
-      }
-      const groups = current.map((group) =>
-        group.id === groupId ? { ...group, name } : group,
-      );
-      return { groups: await writeProjectGroups(groups) };
+    renameProjectGroup({ groupId, name }) {
+      return runPreferenceMutation(async () => {
+        const current = await readProjectGroups();
+        if (!current.some((group) => group.id === groupId)) {
+          throw new Error("Project group not found.");
+        }
+        const groups = current.map((group) =>
+          group.id === groupId ? { ...group, name } : group,
+        );
+        return { groups: await writeProjectGroups(groups) };
+      });
     },
-    async deleteProjectGroup({ groupId }) {
-      const current = await readProjectGroups();
-      const groups = current.filter((group) => group.id !== groupId);
-      if (groups.length === current.length) return { groups: current };
-      return { groups: await writeProjectGroups(groups) };
+    deleteProjectGroup({ groupId }) {
+      return runPreferenceMutation(async () => {
+        const current = await readProjectGroups();
+        const groups = current.filter((group) => group.id !== groupId);
+        if (groups.length === current.length) return { groups: current };
+        return { groups: await writeProjectGroups(groups) };
+      });
     },
-    async reorderProjectGroups({ groupIds }) {
-      const current = await readProjectGroups();
-      const groupsById = new Map(current.map((group) => [group.id, group]));
-      const orderedIds = [...new Set(groupIds)].filter((id) => groupsById.has(id));
-      const requestedIds = new Set(orderedIds);
-      const groups = [
-        ...orderedIds.map((id) => groupsById.get(id)!),
-        ...current.filter((group) => !requestedIds.has(group.id)),
-      ];
-      if (groups.every((group, index) => group.id === current[index]?.id)) {
-        return { groups: current };
-      }
-      return { groups: await writeProjectGroups(groups) };
+    reorderProjectGroups({ groupIds }) {
+      return runPreferenceMutation(async () => {
+        const current = await readProjectGroups();
+        const groupsById = new Map(current.map((group) => [group.id, group]));
+        const orderedIds = [...new Set(groupIds)].filter((id) => groupsById.has(id));
+        const requestedIds = new Set(orderedIds);
+        const groups = [
+          ...orderedIds.map((id) => groupsById.get(id)!),
+          ...current.filter((group) => !requestedIds.has(group.id)),
+        ];
+        if (groups.every((group, index) => group.id === current[index]?.id)) {
+          return { groups: current };
+        }
+        return { groups: await writeProjectGroups(groups) };
+      });
     },
-    async setProjectGroup({ projectId, groupId }) {
-      const current = await readProjectGroups();
-      if (groupId !== null && !current.some((group) => group.id === groupId)) {
-        throw new Error("Project group not found.");
-      }
-      const groups = current.map((group) => ({
-        ...group,
-        projectIds: group.projectIds.filter((id) => id !== projectId),
-      }));
-      if (groupId !== null) {
-        const target = groups.find((group) => group.id === groupId)!;
-        target.projectIds.push(projectId);
-      }
-      const changed = current.some((group, index) =>
-        group.projectIds.join("\0") !== groups[index]!.projectIds.join("\0"),
-      );
-      return { groups: changed ? await writeProjectGroups(groups) : current };
+    setProjectGroup({ projectId, groupId }) {
+      return runPreferenceMutation(async () => {
+        const current = await readProjectGroups();
+        if (groupId !== null && !current.some((group) => group.id === groupId)) {
+          throw new Error("Project group not found.");
+        }
+        const groups = current.map((group) => ({
+          ...group,
+          projectIds: group.projectIds.filter((id) => id !== projectId),
+        }));
+        if (groupId !== null) {
+          const target = groups.find((group) => group.id === groupId)!;
+          target.projectIds.push(projectId);
+        }
+        const changed = current.some((group, index) =>
+          group.projectIds.join("\0") !== groups[index]!.projectIds.join("\0"),
+        );
+        return { groups: changed ? await writeProjectGroups(groups) : current };
+      });
     },
     async listHiddenProjects() {
       return { projectIds: await readHiddenProjects() };
     },
-    async setProjectHidden({ projectId, hidden }) {
-      const current = await readHiddenProjects();
-      const next = hidden
-        ? current.includes(projectId)
-          ? current
-          : [...current, projectId]
-        : current.filter((id) => id !== projectId);
-      if (next.length !== current.length) {
-        await bb.storage.kv.set(HIDDEN_PROJECTS_KEY, next);
-        bb.realtime.publish("hidden-projects-changed", null);
-      }
-      return { projectIds: next };
+    setProjectHidden({ projectId, hidden }) {
+      return runPreferenceMutation(async () => {
+        const current = await readHiddenProjects();
+        const next = hidden
+          ? current.includes(projectId)
+            ? current
+            : [...current, projectId]
+          : current.filter((id) => id !== projectId);
+        if (next.length !== current.length) {
+          await bb.storage.kv.set(HIDDEN_PROJECTS_KEY, next);
+          bb.realtime.publish("hidden-projects-changed", null);
+        }
+        return { projectIds: next };
+      });
     },
-    async resetHiddenProjects() {
-      const current = await readHiddenProjects();
-      if (current.length > 0) {
-        await bb.storage.kv.delete(HIDDEN_PROJECTS_KEY);
-        bb.realtime.publish("hidden-projects-changed", null);
-      }
-      return { projectIds: [] };
+    resetHiddenProjects() {
+      return runPreferenceMutation(async () => {
+        const current = await readHiddenProjects();
+        if (current.length > 0) {
+          await bb.storage.kv.delete(HIDDEN_PROJECTS_KEY);
+          bb.realtime.publish("hidden-projects-changed", null);
+        }
+        return { projectIds: [] };
+      });
     },
     async renameProject({ projectId, name }) {
       const project = await bb.sdk.projects.update({ projectId, name });

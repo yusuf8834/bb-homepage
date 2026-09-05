@@ -71,6 +71,12 @@ function firePointer(
   fireEvent(element, event);
 }
 
+async function waitForPreferences(container: HTMLElement): Promise<void> {
+  await waitFor(() => {
+    expect(container.textContent).not.toBe("Loading projects...");
+  });
+}
+
 describe("project chat launcher", () => {
   it("fills the compact homepage viewport and cleans up on disposal", async () => {
     const recents = document.createElement("section");
@@ -135,7 +141,7 @@ describe("project chat launcher", () => {
       thread("other-project", "project-2", now),
       thread("first-day", "project-1", thirteenDaysAgo),
     ], now).get("project-1")).toEqual([
-      1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1,
+      1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1,
     ]);
   });
 
@@ -149,6 +155,7 @@ describe("project chat launcher", () => {
     const first = renderSlot(app.homepageSections[0]!, { projectId: null }, {
       sidebarThreads,
     });
+    await waitForPreferences(first.container);
     expect(first.container.querySelector("[data-sparkline-entrance]"))
       .not.toBeNull();
     first.lifecycle.unmount();
@@ -156,9 +163,69 @@ describe("project chat launcher", () => {
     const remounted = renderSlot(app.homepageSections[0]!, { projectId: "alpha" }, {
       sidebarThreads,
     });
+    await waitForPreferences(remounted.container);
     expect(remounted.container.querySelector("[data-sparkline-entrance]"))
       .toBeNull();
     remounted.lifecycle.unmount();
+  });
+
+  it("keeps projects usable when one preference request fails", async () => {
+    const app = await loadPluginApp(() => import("../app"));
+    const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {
+      rpc: {
+        listPinnedProjects: () => ({ projectIds: [] }),
+        listProjectGroups: () => Promise.reject(new Error("storage unavailable")),
+        listHiddenProjects: () => ({ projectIds: [] }),
+      },
+      sidebarThreads: {
+        projects: [{ id: "alpha", name: "Alpha", isPersonal: false }],
+        threads: [],
+      },
+    });
+
+    expect((await slot.findByRole("alert")).textContent).toBe(
+      "Some homepage preferences could not be loaded.",
+    );
+    expect(slot.getByRole("button", {
+      name: "Start a new chat in Alpha",
+    })).not.toBeNull();
+    slot.lifecycle.unmount();
+  });
+
+  it("reorders projects from the keyboard in Manual mode", async () => {
+    window.localStorage.setItem("bb-plugin-homepage:ranking-mode", "Manual");
+    const app = await loadPluginApp(() => import("../app"));
+    const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {
+      rpc: {
+        listPinnedProjects: () => ({ projectIds: [] }),
+        listProjectGroups: () => ({ groups: [] }),
+        listHiddenProjects: () => ({ projectIds: [] }),
+      },
+      sidebarThreads: {
+        projects: [
+          { id: "alpha", name: "Alpha", isPersonal: false },
+          { id: "beta", name: "Beta", isPersonal: false },
+        ],
+        threads: [],
+      },
+    });
+
+    const beta = await slot.findByRole("button", {
+      name: "Start a new chat in Beta",
+    });
+    fireEvent.keyDown(beta, { altKey: true, key: "ArrowUp" });
+
+    expect(
+      slot.getAllByRole("button", { name: /Start a new chat/ })
+        .map((button) => button.getAttribute("aria-label")),
+    ).toEqual([
+      "Start a new chat in Beta",
+      "Start a new chat in Alpha",
+    ]);
+    expect(beta.getAttribute("aria-keyshortcuts")).toBe(
+      "Alt+ArrowUp Alt+ArrowDown",
+    );
+    slot.lifecycle.unmount();
   });
 
   it("keeps recent-activity order while highlighting and opening the selected project", async () => {
@@ -187,6 +254,7 @@ describe("project chat launcher", () => {
       month: "short",
       year: "numeric",
     });
+    await waitForPreferences(slot.container);
     expect(slot.getAllByRole("button", { name: /Start a new chat/ }).map((button) => button.textContent)).toEqual([
       `Once1 chat · ${epochMonth}`,
       `Often2 chats · ${epochMonth}`,
@@ -363,6 +431,7 @@ describe("project chat launcher", () => {
       },
     });
 
+    await waitForPreferences(slot.container);
     fireEvent.click(slot.getByRole("button", { name: "New group" }));
     const createForm = slot.getByRole("form", { name: "Create project group" });
     fireEvent.change(slot.getByLabelText("Group name"), {
@@ -601,6 +670,7 @@ describe("project chat launcher", () => {
       },
     });
 
+    await waitForPreferences(slot.container);
     // Radix marks closed context-menu triggers with data-state; opening the
     // menu itself deadlocks under jsdom, so the open path is verified live.
     const trigger = slot.container.querySelector('[data-state="closed"]');
@@ -686,6 +756,7 @@ describe("project chat launcher", () => {
       },
     });
 
+    await waitForPreferences(slot.container);
     const icon = slot.container.querySelector("[data-homepage-project-icon]");
     expect(icon).not.toBeNull();
     fireEvent.contextMenu(icon!);
@@ -722,7 +793,7 @@ describe("project chat launcher", () => {
       },
     });
 
-    const sparkline = slot.getByRole("img", {
+    const sparkline = await slot.findByRole("img", {
       name: "Busy: 2 new chats in the last 14 days",
     });
     expect(sparkline.querySelectorAll("path")).toHaveLength(2);
@@ -754,6 +825,7 @@ describe("project chat launcher", () => {
       },
     });
 
+    await waitForPreferences(slot.container);
     expect(slot.getAllByRole("button", { name: /Start a new chat/ }).map((button) => button.getAttribute("aria-label"))).toEqual([
       "Start a new chat in Beta",
       "Start a new chat in Gamma",
@@ -788,6 +860,7 @@ describe("project chat launcher", () => {
       },
     });
 
+    await waitForPreferences(slot.container);
     fireEvent.change(slot.getByLabelText("Sort projects"), {
       target: { value: "Most chats" },
     });
@@ -821,6 +894,7 @@ describe("project chat launcher", () => {
       },
     });
 
+    await waitForPreferences(slot.container);
     fireEvent.change(slot.getByLabelText("Sort projects"), {
       target: { value: "Alphabetical" },
     });
@@ -857,6 +931,7 @@ describe("project chat launcher", () => {
       },
     });
 
+    await waitForPreferences(slot.container);
     fireEvent.change(slot.getByLabelText("Sort projects"), {
       target: { value: "Manual" },
     });
@@ -935,6 +1010,7 @@ describe("project chat launcher", () => {
         threads: [],
       },
     });
+    await waitForPreferences(restored.container);
     expect((restored.getByLabelText("Sort projects") as HTMLSelectElement).value)
       .toBe("Manual");
     expect(
@@ -958,7 +1034,7 @@ describe("project chat launcher", () => {
         threads: [],
       },
     });
-    const button = slot.getByRole("button", {
+    const button = await slot.findByRole("button", {
       name: "Start a new chat in Alpha",
     });
     const card = button.closest<HTMLElement>("[data-project-id]");
@@ -1012,6 +1088,7 @@ describe("project chat launcher", () => {
       },
     });
 
+    await waitForPreferences(slot.container);
     const selector = slot.getByLabelText("Sort projects") as HTMLSelectElement;
     expect(selector.value).toBe("Most chats");
     expect(slot.getAllByRole("button", { name: /Start a new chat/ })[0]?.textContent).toContain("Busy");
@@ -1043,6 +1120,7 @@ describe("project chat launcher", () => {
       sidebarThreads: { status, projects: [], threads: [] },
     });
 
+    if (status === "ready") await waitForPreferences(slot.container);
     expect(slot.getByRole(role).textContent).toBe(text);
     slot.lifecycle.unmount();
   });

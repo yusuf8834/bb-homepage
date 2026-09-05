@@ -22,7 +22,7 @@ export function buildNewChatActivityByProject(
 
   const byProject = new Map<string, number[]>();
   for (const thread of threads) {
-    if (thread.parentThreadId !== null) continue;
+    if (thread.isArchived || thread.parentThreadId !== null) continue;
     const index = dayIndexes.get(localDayKey(thread.createdAt));
     if (index === undefined) continue;
 

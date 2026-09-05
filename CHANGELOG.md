@@ -11,6 +11,14 @@ All notable changes to this project are documented here.
 - Reorder groups by dragging their headers or using Move up and Move down in
   the group actions menu.
 - Collapse or expand a group from its header and remember the choice locally.
+- Load pins, groups, and hidden-project preferences before drawing project
+  cards, and surface preference and action failures instead of silently
+  ignoring them.
+- Add keyboard reordering in Manual mode with Alt+Arrow Up or Alt+Arrow Down.
+- Exclude archived chats from activity sparklines, validate stored project IDs,
+  and serialize preference writes so simultaneous changes are not lost.
+- Align development with Plugin SDK 0.4.47 and rebuild release archives from a
+  clean output directory.
 
 ## 0.2.1 - 2026-09-02
 

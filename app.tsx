@@ -477,6 +477,10 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
   const sortPointerSelectionRef = useRef(false);
   const [pinnedIds, setPinnedIds] = useState<readonly string[]>([]);
   const [projectGroups, setProjectGroups] = useState<readonly ProjectGroup[]>([]);
+  const [preferencesStatus, setPreferencesStatus] = useState<
+    "error" | "loading" | "ready"
+  >("loading");
+  const [actionError, setActionError] = useState<string | null>(null);
   const [collapsedGroupIds, setCollapsedGroupIds] = useState<readonly string[]>(
     readCollapsedGroupIds,
   );
@@ -492,14 +496,23 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
   const groupDropTargetRef = useRef<GroupDropTarget | null>(null);
   useEffect(() => {
     let cancelled = false;
-    void rpc.call("listPinnedProjects").then(
-      ({ projectIds }) => {
-        if (!cancelled) setPinnedIds(projectIds);
-      },
-      () => {
-        // Pins are an enhancement; the launcher works without them.
-      },
-    );
+    void Promise.allSettled([
+      rpc.call("listPinnedProjects"),
+      rpc.call("listProjectGroups"),
+      rpc.call("listHiddenProjects"),
+    ]).then(([pins, groups, hidden]) => {
+      if (cancelled) return;
+      if (pins.status === "fulfilled") setPinnedIds(pins.value.projectIds);
+      if (groups.status === "fulfilled") setProjectGroups(groups.value.groups);
+      if (hidden.status === "fulfilled") setHiddenIds(hidden.value.projectIds);
+      setPreferencesStatus(
+        pins.status === "rejected" ||
+          groups.status === "rejected" ||
+          hidden.status === "rejected"
+          ? "error"
+          : "ready",
+      );
+    });
     return () => {
       cancelled = true;
     };
@@ -507,47 +520,19 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
   useRealtime("pins-changed", () => {
     void rpc.call("listPinnedProjects").then(
       ({ projectIds }) => setPinnedIds(projectIds),
-      () => {},
+      () => setActionError("Pinned projects could not be refreshed."),
     );
   });
-  useEffect(() => {
-    let cancelled = false;
-    void rpc.call("listProjectGroups").then(
-      ({ groups }) => {
-        if (!cancelled) setProjectGroups(groups);
-      },
-      () => {
-        // Custom groups are optional; projects still appear in All projects.
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, []);
   useRealtime("project-groups-changed", () => {
     void rpc.call("listProjectGroups").then(
       ({ groups }) => setProjectGroups(groups),
-      () => {},
+      () => setActionError("Project groups could not be refreshed."),
     );
   });
-  useEffect(() => {
-    let cancelled = false;
-    void rpc.call("listHiddenProjects").then(
-      ({ projectIds }) => {
-        if (!cancelled) setHiddenIds(projectIds);
-      },
-      () => {
-        // The launcher remains usable if hidden-project state cannot be read.
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, []);
   useRealtime("hidden-projects-changed", () => {
     void rpc.call("listHiddenProjects").then(
       ({ projectIds }) => setHiddenIds(projectIds),
-      () => {},
+      () => setActionError("Hidden projects could not be refreshed."),
     );
   });
 
@@ -576,14 +561,6 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
     return groupIds;
   }, [projectGroups]);
 
-  if (status === "loading") {
-    return (
-      <p role="status" className="py-2 text-sm text-muted-foreground">
-        Loading projects...
-      </p>
-    );
-  }
-
   if (status === "error") {
     return (
       <p role="alert" className="py-2 text-sm text-destructive">
@@ -592,11 +569,31 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
     );
   }
 
-  if (rankedProjects.length === 0) {
+  if (status === "loading" || preferencesStatus === "loading") {
     return (
       <p role="status" className="py-2 text-sm text-muted-foreground">
-        No projects yet.
+        Loading projects...
       </p>
+    );
+  }
+
+  if (rankedProjects.length === 0) {
+    const emptyStateError =
+      actionError ??
+      (preferencesStatus === "error"
+        ? "Some homepage preferences could not be loaded."
+        : null);
+    return (
+      <div className="py-2">
+        {emptyStateError ? (
+          <p role="alert" className="mb-2 text-xs text-destructive">
+            {emptyStateError}
+          </p>
+        ) : null}
+        <p role="status" className="text-sm text-muted-foreground">
+          No projects yet.
+        </p>
+      </div>
     );
   }
 
@@ -650,6 +647,17 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
     moveProjectInManualOrder(sourceId, targetId, position);
   }
 
+  function moveProjectByOffset(targetId: string, offset: -1 | 1): void {
+    const sectionId = projectSectionFor(targetId);
+    const sectionProjects = rankedProjects.filter(
+      (project) => projectSectionFor(project.id) === sectionId,
+    );
+    const index = sectionProjects.findIndex((project) => project.id === targetId);
+    const target = sectionProjects[index + offset];
+    if (!target) return;
+    reorderProject(targetId, target.id, offset === -1 ? "before" : "after");
+  }
+
   function projectSectionFor(targetId: string): ProjectSectionId {
     if (pinnedIds.includes(targetId)) return "pinned";
     const groupId = projectGroupIds.get(targetId);
@@ -657,13 +665,17 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
   }
 
   function togglePin(targetId: string, pinned: boolean): void {
+    setActionError(null);
     void rpc.call("setProjectPinned", { projectId: targetId, pinned }).then(
       ({ projectIds }) => setPinnedIds(projectIds),
-      () => {},
+      () => setActionError(
+        pinned ? "Project could not be pinned." : "Project could not be unpinned.",
+      ),
     );
   }
 
   function assignProjectToGroup(targetId: string, groupId: string | null): void {
+    setActionError(null);
     setProjectGroups((current) => current.map((group) => ({
       ...group,
       projectIds: group.id === groupId
@@ -673,9 +685,12 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
     void rpc.call("setProjectGroup", { projectId: targetId, groupId }).then(
       ({ groups }) => setProjectGroups(groups),
       () => {
+        setActionError("Project group could not be changed.");
         void rpc.call("listProjectGroups").then(
           ({ groups }) => setProjectGroups(groups),
-          () => {},
+          () => setActionError(
+            "Project group could not be changed or refreshed.",
+          ),
         );
       },
     );
@@ -738,6 +753,7 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
     if (!window.confirm(`Delete the group "${group.name}"? Its projects will return to All projects.`)) {
       return;
     }
+    setActionError(null);
     setProjectGroups((current) => current.filter((candidate) => candidate.id !== group.id));
     setCollapsedGroupIds((current) => {
       const next = current.filter((groupId) => groupId !== group.id);
@@ -747,9 +763,10 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
     void rpc.call("deleteProjectGroup", { groupId: group.id }).then(
       ({ groups }) => setProjectGroups(groups),
       () => {
+        setActionError("Group could not be deleted.");
         void rpc.call("listProjectGroups").then(
           ({ groups }) => setProjectGroups(groups),
-          () => {},
+          () => setActionError("Group could not be deleted or refreshed."),
         );
       },
     );
@@ -766,15 +783,17 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
   }
 
   function saveGroupOrder(groups: readonly ProjectGroup[]): void {
+    setActionError(null);
     setProjectGroups(groups);
     void rpc.call("reorderProjectGroups", {
       groupIds: groups.map((group) => group.id),
     }).then(
       ({ groups: savedGroups }) => setProjectGroups(savedGroups),
       () => {
+        setActionError("Group order could not be saved.");
         void rpc.call("listProjectGroups").then(
           ({ groups: savedGroups }) => setProjectGroups(savedGroups),
-          () => {},
+          () => setActionError("Group order could not be saved or refreshed."),
         );
       },
     );
@@ -856,15 +875,20 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
   }
 
   function hideProject(targetId: string): void {
+    setActionError(null);
     setHiddenIds((current) =>
       current.includes(targetId) ? current : [...current, targetId],
     );
     void rpc.call("setProjectHidden", { projectId: targetId, hidden: true }).then(
       ({ projectIds }) => setHiddenIds(projectIds),
       () => {
+        setActionError("Project could not be hidden.");
         void rpc.call("listHiddenProjects").then(
           ({ projectIds }) => setHiddenIds(projectIds),
-          () => setHiddenIds((current) => current.filter((id) => id !== targetId)),
+          () => {
+            setHiddenIds((current) => current.filter((id) => id !== targetId));
+            setActionError("Project could not be hidden or refreshed.");
+          },
         );
       },
     );
@@ -1057,6 +1081,15 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
     const currentGroupId = projectGroupIds.get(project.id) ?? null;
     const isEditing = renameTarget?.id === project.id;
     const isManual = rankingMode === "Manual";
+    const manualSectionProjects = isManual
+      ? rankedProjects.filter(
+          (candidate) =>
+            projectSectionFor(candidate.id) === projectSectionFor(project.id),
+        )
+      : [];
+    const manualSectionIndex = manualSectionProjects.findIndex(
+      (candidate) => candidate.id === project.id,
+    );
     const isDragging = draggedProjectId === project.id;
     const activity = activityByProject.get(project.id) ?? [];
     const className = [
@@ -1067,7 +1100,7 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
     ].join(" ");
 
     const menuItemClassName =
-      "flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-foreground outline-none data-[highlighted]:bg-state-hover";
+      "flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-foreground outline-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[highlighted]:bg-state-hover";
 
     const cardContent = (
       <>
@@ -1231,6 +1264,19 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
                 className={className}
                 aria-label={`Start a new chat in ${project.name}`}
                 aria-current={isCurrent ? "page" : undefined}
+                aria-keyshortcuts={
+                  isManual ? "Alt+ArrowUp Alt+ArrowDown" : undefined
+                }
+                onKeyDown={(event) => {
+                  if (!isManual || !event.altKey) return;
+                  if (event.key === "ArrowUp") {
+                    event.preventDefault();
+                    moveProjectByOffset(project.id, -1);
+                  } else if (event.key === "ArrowDown") {
+                    event.preventDefault();
+                    moveProjectByOffset(project.id, 1);
+                  }
+                }}
                 onClick={() => {
                   if (suppressClickRef.current === project.id) {
                     suppressClickRef.current = null;
@@ -1262,6 +1308,25 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
             >
               {isPinned ? "Unpin" : "Pin"}
             </ContextMenu.Item>
+            {isManual ? (
+              <>
+                <ContextMenu.Separator className="my-1 h-px bg-border" />
+                <ContextMenu.Item
+                  className={menuItemClassName}
+                  disabled={manualSectionIndex <= 0}
+                  onSelect={() => moveProjectByOffset(project.id, -1)}
+                >
+                  Move up
+                </ContextMenu.Item>
+                <ContextMenu.Item
+                  className={menuItemClassName}
+                  disabled={manualSectionIndex >= manualSectionProjects.length - 1}
+                  onSelect={() => moveProjectByOffset(project.id, 1)}
+                >
+                  Move down
+                </ContextMenu.Item>
+              </>
+            ) : null}
             <ContextMenu.Sub>
               <ContextMenu.SubTrigger className={`${menuItemClassName} justify-between`}>
                 <span>Move to group</span>
@@ -1372,6 +1437,11 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
           </select>
         </label>
       </div>
+      {actionError || preferencesStatus === "error" ? (
+        <p role="alert" className="mb-3 text-xs text-destructive">
+          {actionError ?? "Some homepage preferences could not be loaded."}
+        </p>
+      ) : null}
       {groupEditor ? (
         <form
           aria-label={groupEditor.mode === "create" ? "Create project group" : "Rename project group"}

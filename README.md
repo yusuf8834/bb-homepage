@@ -12,7 +12,8 @@ is intentionally separate from provider plugins.
 ## Features
 
 - Sort projects by recent activity, chat count, name, or a saved manual order.
-  In Manual mode, drag a card to reorder it and click normally to open it.
+  In Manual mode, drag a card to reorder it, use Alt+Arrow Up or Alt+Arrow Down
+  from the keyboard, and click normally to open it.
 - Highlight the project selected in the new-thread composer without moving it
   away from the chosen sort position.
 - Control chat counts, projects without chats, Personal, and project artwork

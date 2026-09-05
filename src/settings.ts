@@ -26,7 +26,7 @@ const DEFAULT_HOMEPAGE_SETTINGS: HomepageSettings = {
 };
 
 export function parseHomepageSettings(
-  values: Record<string, string | boolean> | undefined,
+  values: Record<string, string | number | boolean> | undefined,
 ): HomepagePluginSettings {
   return {
     showChatCounts: booleanSetting(values, "showChatCounts"),
@@ -44,7 +44,7 @@ export function parseRankingMode(value: unknown): RankingMode {
 }
 
 function booleanSetting(
-  values: Record<string, string | boolean> | undefined,
+  values: Record<string, string | number | boolean> | undefined,
   key: Exclude<keyof HomepageSettings, "rankingMode">,
 ): boolean {
   const value = values?.[key];

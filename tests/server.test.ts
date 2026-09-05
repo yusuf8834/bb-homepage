@@ -69,6 +69,19 @@ describe("pinned projects", () => {
       projectIds: ["b"],
     });
   });
+
+  it("normalizes malformed stored project IDs", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "homepage" });
+    await bb.storage.kv.set(
+      "pinned-projects",
+      ["a", "", 42, "a", null, "b"],
+    );
+    plugin(bb);
+
+    await expect(harness.behavior.callRpc("listPinnedProjects")).resolves.toEqual({
+      projectIds: ["a", "b"],
+    });
+  });
 });
 
 describe("project groups", () => {
@@ -157,6 +170,27 @@ describe("project groups", () => {
     await expect(harness.behavior.callRpc("listProjectGroups")).resolves.toMatchObject({
       groups: [{ id: secondId }, { id: firstId }],
     });
+  });
+
+  it("serializes concurrent group creation without losing writes", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "homepage" });
+    plugin(bb);
+
+    await Promise.all(
+      Array.from({ length: 20 }, (_, index) =>
+        harness.behavior.callRpc("createProjectGroup", {
+          name: `Group ${index}`,
+        }),
+      ),
+    );
+    const result = await harness.behavior.callRpc("listProjectGroups") as {
+      groups: Array<{ name: string }>;
+    };
+
+    expect(result.groups).toHaveLength(20);
+    expect(new Set(result.groups.map((group) => group.name))).toEqual(
+      new Set(Array.from({ length: 20 }, (_, index) => `Group ${index}`)),
+    );
   });
 });
 
