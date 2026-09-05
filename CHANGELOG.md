@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented here.
 
-## Unreleased
+## 0.2.2 - 2026-09-05
 
 - Add synced custom project groups with create, rename, and delete controls.
 - Move projects into groups from the right-click menu or by dragging between
