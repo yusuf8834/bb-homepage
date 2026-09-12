@@ -220,11 +220,19 @@ async function listProjectImageCandidates(
     const result = await source.listFiles({ projectId, query, limit: "100", signal });
     return result.files
       .map((file) => normalizeProjectIconPath(file.path))
-      .filter((path): path is string => path !== null);
+      .filter((path): path is string => path !== null && isDiscoverableProjectIcon(path));
   } catch (error) {
     if (signal.aborted) throw error;
     return [];
   }
+}
+
+function isDiscoverableProjectIcon(path: string): boolean {
+  // File search is fuzzy: its results can include screenshots and other assets.
+  // Only infer artwork from conventional filenames. Arbitrary filenames can
+  // still be selected explicitly through bb.branding in package.json.
+  const name = path.split("/").at(-1) ?? path;
+  return /^(?:favicon|icon|logo|apple-touch-icon)(?:[-_.](?:\d+(?:x\d+)?|dark|light|maskable|monochrome|precomposed))*\.(?:svg|png|webp|jpe?g|ico)$/i.test(name);
 }
 
 async function readManifestArtwork(

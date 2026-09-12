@@ -74,6 +74,39 @@ describe("project icon policy", () => {
     expect(icon).toBeNull();
   });
 
+  it.each([null, "public/favicon.ico", "assets/logo-light.svg", "icons/icon-192x192.png", "apple-touch-icon-precomposed.png"])(
+    "ignores unrelated fuzzy search results with fallback %s",
+    async (candidate) => {
+      const reads: string[] = [];
+      const artwork = await findProjectArtwork(
+        {
+          listFiles: async () => ({
+            files: [
+              "public/screenshot.png",
+              "icons/dashboard.png",
+              "docs/icon-comparison.png",
+              "biology/phylogony.jpg",
+              "docs/logo-preview.png",
+              ...(candidate === null ? [] : [candidate]),
+            ].map((path) => ({ path })),
+          }),
+          readFile: async ({ path }) => {
+            reads.push(path);
+            if (path === "package.json") throw new Error("not found");
+            const content = '<svg xmlns="http://www.w3.org/2000/svg"/>';
+            return { content, contentEncoding: "utf8", mimeType: "image/svg+xml", sizeBytes: content.length };
+          },
+        },
+        "project-1",
+        new AbortController().signal,
+      );
+
+      expect(reads).toEqual(["package.json", ...(candidate === null ? [] : [candidate])]);
+      if (candidate === null) expect(artwork).toBeNull();
+      else expect(artwork).toMatchObject({ kind: "image", mimeType: projectIconMimeType(candidate) });
+    },
+  );
+
   it("returns a declared icon without running fuzzy project searches", async () => {
     let searches = 0;
     const icon = await findProjectArtwork(
@@ -192,7 +225,7 @@ describe("project icon policy", () => {
       {
         listFiles: async ({ query }) => ({
           files: query === "icon"
-            ? [{ path: "icon.svg" }, { path: "fallback-icon.png" }]
+            ? [{ path: "icon.svg" }, { path: "logo.png" }]
             : [],
         }),
         readFile: async ({ path }) => {

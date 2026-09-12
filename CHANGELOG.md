@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here.
 
+## 0.2.3 - 2026-09-12
+
+- Stop fuzzy image searches from selecting screenshots and unrelated assets as
+  project icons. Require conventional icon or logo filenames, while preserving
+  explicit BB branding and the folder fallback.
+
 ## 0.2.2 - 2026-09-05
 
 - Add synced custom project groups with create, rename, and delete controls.
