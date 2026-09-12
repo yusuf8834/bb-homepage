@@ -292,6 +292,7 @@ describe("project chat launcher", () => {
   it("renders pinned projects without hover pin controls", async () => {
     const app = await loadPluginApp(() => import("../app"));
     const pinHandlers: PluginRpcTestHandlers<typeof rpcContract> = {
+      getProjectOpenContext: () => ({ source: null, ports: [] }),
       listPinnedProjects: () => ({ projectIds: ["beta"] }),
       setProjectPinned: ({ projectId, pinned }) => ({
         projectIds: pinned ? ["beta", projectId] : [],
@@ -337,6 +338,7 @@ describe("project chat launcher", () => {
     window.localStorage.setItem("bb-plugin-homepage:ranking-mode", "Manual");
     const app = await loadPluginApp(() => import("../app"));
     const rpcHandlers: PluginRpcTestHandlers<typeof rpcContract> = {
+      getProjectOpenContext: () => ({ source: null, ports: [] }),
       listPinnedProjects: () => ({ projectIds: [] }),
       setProjectPinned: ({ projectId, pinned }) => ({
         projectIds: pinned ? [projectId] : [],
@@ -732,6 +734,7 @@ describe("project chat launcher", () => {
   it("renames a project inline by right-clicking its icon", async () => {
     const app = await loadPluginApp(() => import("../app"));
     const rpcHandlers: PluginRpcTestHandlers<typeof rpcContract> = {
+      getProjectOpenContext: () => ({ source: null, ports: [] }),
       listPinnedProjects: () => ({ projectIds: [] }),
       setProjectPinned: () => ({ projectIds: [] }),
       listProjectGroups: () => ({ groups: [] }),
@@ -979,7 +982,7 @@ describe("project chat launcher", () => {
       slot.getByRole("button", { name: "Start a new chat in Gamma" }),
     );
     expect(slot.container.querySelector("[data-drag-handle]")).toBeNull();
-    expect(slot.inspection.sidebarActionCalls).toEqual([]);
+    expect(slot.inspection.navigateCalls).toEqual([]);
 
     expect(
       slot

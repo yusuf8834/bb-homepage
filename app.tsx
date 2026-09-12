@@ -16,6 +16,7 @@ import type {
   PluginSidebarThread,
 } from "@get-bb/plugin-sdk/app";
 import { buildNewChatActivityByProject } from "./src/activity.js";
+import { ProjectOpenMenu } from "./src/ProjectOpenMenu.js";
 import { formatRelativeTime } from "./src/relative-time.js";
 import type { ProjectGroup, rpcContract } from "./server.js";
 import {
@@ -1100,7 +1101,7 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
     ].join(" ");
 
     const menuItemClassName =
-      "flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-foreground outline-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[highlighted]:bg-state-hover";
+      "flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-foreground outline-none transition-colors hover:bg-state-hover data-[state=open]:bg-state-hover data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[highlighted]:bg-state-hover";
 
     const cardContent = (
       <>
@@ -1292,7 +1293,7 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
           </div>
         </ContextMenu.Trigger>
         <ContextMenu.Portal>
-          <ContextMenu.Content className="z-50 min-w-[10rem] rounded-md border border-border bg-card p-1 shadow-md">
+          <ContextMenu.Content data-bb-plugin="homepage" className="z-50 min-w-[10rem] rounded-md border border-border bg-card p-1 shadow-md">
             <ContextMenu.Item
               className={menuItemClassName}
               onSelect={() => {
@@ -1302,6 +1303,11 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
             >
               New chat
             </ContextMenu.Item>
+            <ProjectOpenMenu
+              projectId={project.id}
+              itemClassName={menuItemClassName}
+              onError={setActionError}
+            />
             <ContextMenu.Item
               className={menuItemClassName}
               onSelect={() => togglePin(project.id, !isPinned)}
@@ -1333,7 +1339,7 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
                 <span aria-hidden="true">›</span>
               </ContextMenu.SubTrigger>
               <ContextMenu.Portal>
-                <ContextMenu.SubContent className="z-50 min-w-[10rem] rounded-md border border-border bg-card p-1 shadow-md">
+                <ContextMenu.SubContent data-bb-plugin="homepage" className="z-50 min-w-[10rem] rounded-md border border-border bg-card p-1 shadow-md">
                   <ContextMenu.Item
                     className={menuItemClassName}
                     disabled={currentGroupId === null}

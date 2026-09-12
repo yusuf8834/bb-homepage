@@ -20,6 +20,8 @@ is intentionally separate from provider plugins.
   from plugin settings. All projects are visible by default.
 - See each project's chat count, relative last-activity time, and 14-day
   new-chat sparkline. Archived and child chats do not affect these values.
+- Open a project’s default checkout in an installed app from the right-click
+  **Open in** menu. Uses BB’s desktop helper, including supported remote SSH apps.
 - Pin projects from the right-click menu, or drag them into the Pinned section
   in Manual mode. Pinned projects sync across windows.
 - Create custom project groups from the launcher. Use a project's right-click

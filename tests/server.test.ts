@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server.js";
 
@@ -432,5 +432,29 @@ describe("project icon route", () => {
     expect((await harness.behavior.fetchHttp("GET", "/project-icon?projectId=project-1")).status)
       .toBe(200);
     expect(manifestReads).toBe(1);
+  });
+});
+
+
+describe("project app opening context", () => {
+  it.each([true, false])("resolves the default checkout, present: %s", async (hasSources) => {
+    const sources = hasSources ? [
+      { hostId: "other", path: "/other", isDefault: false },
+      { hostId: "default", path: "/default", isDefault: true },
+    ] : [];
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "homepage",
+      sdk: {
+        projects: { get: vi.fn().mockResolvedValue({ sources }) },
+        system: { config: vi.fn().mockResolvedValue({ localHelperPorts: [1234] }) },
+      },
+    });
+    plugin(bb);
+    await expect(harness.behavior.callRpc("getProjectOpenContext", { projectId: "project-1" }))
+      .resolves.toEqual({
+        source: hasSources ? { hostId: "default", path: "/default" } : null,
+        ports: [1234],
+      });
+    expect(harness.inspection.sdk.callsTo("projects.get")).toEqual([[{ projectId: "project-1" }]]);
   });
 });

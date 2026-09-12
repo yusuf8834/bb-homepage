@@ -25,6 +25,13 @@ const projectGroupSchema = z
 export type ProjectGroup = z.infer<typeof projectGroupSchema>;
 
 export const rpcContract = defineRpcContract({
+  getProjectOpenContext: {
+    input: z.object({ projectId: z.string().min(1) }).strict(),
+    output: z.object({
+      source: z.object({ hostId: z.string(), path: z.string() }).nullable(),
+      ports: z.array(z.number().int().min(1).max(65535)),
+    }),
+  },
   listPinnedProjects: {
     input: z.null(),
     output: z.object({ projectIds: z.array(z.string()) }),
@@ -320,6 +327,17 @@ export default function plugin(bb: BbPluginApi) {
     async renameProject({ projectId, name }) {
       const project = await bb.sdk.projects.update({ projectId, name });
       return { projectId: project.id, name: project.name };
+    },
+    async getProjectOpenContext({ projectId }) {
+      const [project, config] = await Promise.all([
+        bb.sdk.projects.get({ projectId }),
+        bb.sdk.system.config(),
+      ]);
+      const source = project.sources.find((source) => source.isDefault) ?? project.sources[0];
+      return {
+        source: source ? { hostId: source.hostId, path: source.path } : null,
+        ports: config.localHelperPorts,
+      };
     },
     async getProjectArtwork({ projectId }) {
       const artwork = await iconCache.get(projectId);
