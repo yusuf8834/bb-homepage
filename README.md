@@ -56,6 +56,8 @@ is intentionally separate from provider plugins.
   folder icon.
 - Cache icon lookups, coalesce simultaneous requests, and briefly cache missing
   results.
+- Retain loaded artwork, groups, and checkout counts between new-thread page
+  visits in the same window, refreshing them without resetting the cards.
 - Serve only supported images up to 2 MB. The icon endpoint rejects unsafe
   paths, build directories, malformed SVGs, active elements, event handlers,
   foreign namespaces, doctypes, and external references.

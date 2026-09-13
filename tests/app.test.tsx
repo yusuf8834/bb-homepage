@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { fireEvent, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import {
   loadPluginApp,
   mountPluginContentScripts,
@@ -44,6 +44,11 @@ function thread(id: string, projectId: string, updatedAt: number) {
     latestAttentionAt: updatedAt,
   };
 }
+
+beforeEach(() => {
+  // Each test represents a fresh app window; remounts within a test share caches.
+  vi.resetModules();
+});
 
 afterEach(() => {
   document.body.innerHTML = "";
@@ -97,6 +102,93 @@ async function waitForPreferences(container: HTMLElement): Promise<void> {
 }
 
 describe("project chat launcher", () => {
+  it.each([false, true])("retains artwork, groups, and checkout counts while a return visit refreshes, failure=%s", async (failRefresh) => {
+    const app = await loadPluginApp(() => import("../app"));
+    const sidebarThreads = {
+      projects: [
+        { id: "alpha", name: "Alpha", isPersonal: false },
+        { id: "beta", name: "Beta", isPersonal: false },
+        { id: "hidden", name: "Hidden", isPersonal: false },
+      ],
+      threads: [],
+    };
+    const workspace = {
+      kind: "available" as const, environmentId: "env-alpha",
+      branch: "main", defaultBranch: "main", worktrees: 0, fetchedAt: 1,
+      changes: { files: 2, insertions: 10, deletions: 3, lineStatsComplete: true },
+    };
+    const rpc: PluginRpcTestHandlers<Pick<typeof rpcContract,
+      "listPinnedProjects" | "listProjectGroups" | "listHiddenProjects" |
+      "getProjectArtwork" | "getProjectWorkspaceStatuses"
+    >> = {
+      listPinnedProjects: () => ({ projectIds: [] }),
+      listProjectGroups: () => ({ groups: [{ id: "work", name: "Work", projectIds: ["alpha", "beta"] }] }),
+      listHiddenProjects: () => ({ projectIds: ["hidden"] }),
+      getProjectArtwork: ({ projectId }) => projectId === "alpha"
+        ? { kind: "glyph", svg: '<svg xmlns="http://www.w3.org/2000/svg" />' }
+        : { kind: "image" },
+      getProjectWorkspaceStatuses: () => ({ statuses: { alpha: workspace } }),
+    };
+    const first = renderSlot(app.homepageSections[0]!, { projectId: null }, { rpc, sidebarThreads });
+    await waitFor(() => {
+      expect(first.container.querySelector("[data-homepage-project-glyph]")).not.toBeNull();
+      expect(first.container.querySelector("[data-homepage-project-icon] img")).not.toBeNull();
+      expect(first.container.querySelector("[data-workspace-changes]")?.textContent).toBe("2 files+10 -3");
+    });
+    first.lifecycle.unmount();
+
+    let finishRefresh!: () => void;
+    const pending = new Promise<void>((resolve) => { finishRefresh = resolve; });
+    async function refresh<Value>(value: Value): Promise<Value> {
+      await pending;
+      if (failRefresh) throw new Error("offline");
+      return value;
+    }
+    const second = renderSlot(app.homepageSections[0]!, { projectId: null }, {
+      sidebarThreads,
+      rpc: {
+        listPinnedProjects: () => refresh({ projectIds: [] }),
+        listProjectGroups: () => refresh({ groups: [{ id: "work", name: "Renamed", projectIds: ["alpha", "beta"] }] }),
+        listHiddenProjects: () => refresh({ projectIds: ["hidden"] }),
+        getProjectArtwork: () => refresh({ kind: "missing" as const }),
+        getProjectWorkspaceStatuses: () => refresh({ statuses: {
+          alpha: { ...workspace, changes: { ...workspace.changes, files: 0, insertions: 0, deletions: 0 } },
+        } }),
+      },
+    });
+    // Assert the first render, before any of the new visit's requests resolves.
+    expect(second.container.textContent).not.toContain("Loading projects...");
+    expect(second.getByRole("button", { name: "Collapse Work group" })).not.toBeNull();
+    expect(second.queryByRole("button", { name: "Start a new chat in Hidden" })).toBeNull();
+    expect(second.container.querySelector("[data-homepage-project-glyph]")).not.toBeNull();
+    expect(second.container.querySelector("[data-homepage-project-icon] img")).not.toBeNull();
+    expect(second.container.querySelector("[data-workspace-changes]")?.textContent).toBe("2 files+10 -3");
+
+    finishRefresh();
+    if (failRefresh) {
+      await second.findByRole("alert");
+      expect(second.container.querySelector("[data-homepage-project-glyph]")).not.toBeNull();
+      expect(second.container.querySelector("[data-homepage-project-icon] img")).not.toBeNull();
+      expect(second.container.querySelector("[data-workspace-changes]")?.textContent).toBe("2 files+10 -3");
+    } else {
+      await second.findByRole("button", { name: "Collapse Renamed group" });
+      await waitFor(() => {
+        expect(second.container.querySelector("[data-homepage-project-glyph]")).toBeNull();
+        expect(second.container.querySelector("[data-homepage-project-icon] img")).toBeNull();
+        expect(second.container.querySelector("[data-workspace-changes]")?.textContent).toBe("NoChange");
+      });
+    }
+    second.lifecycle.unmount();
+
+    const disabled = renderSlot(app.homepageSections[0]!, { projectId: null }, {
+      sidebarThreads, rpc, settings: { loadProjectIcons: false, showWorkspaceStatus: false },
+    });
+    expect(disabled.container.querySelector("[data-homepage-project-glyph]")).toBeNull();
+    expect(disabled.container.querySelector("[data-homepage-project-icon] img")).toBeNull();
+    expect(disabled.container.querySelector("[data-workspace-changes]")).toBeNull();
+    disabled.lifecycle.unmount();
+  });
+
   it("fills the compact homepage viewport and cleans up on disposal", async () => {
     const recents = document.createElement("section");
     recents.dataset.rootComposeMobileRecents = "";
@@ -282,12 +374,12 @@ describe("project chat launcher", () => {
     expect(slot.getByRole("button", { name: "Start a new chat in Often" }).getAttribute("aria-current"))
       .toBe("page");
     await waitFor(() => {
-      expect(slot.container.querySelectorAll('img[loading="lazy"]')).toHaveLength(3);
+      expect(slot.container.querySelectorAll('[data-homepage-project-icon] img')).toHaveLength(3);
     });
     expect(
       slot.container.querySelector("[data-homepage-project-icon]")?.className,
     ).not.toContain("bg-muted");
-    expect(slot.container.querySelector('img[loading="lazy"]')?.className)
+    expect(slot.container.querySelector('[data-homepage-project-icon] img')?.className)
       .toContain("size-8");
     expect(slot.queryAllByRole("img", { name: /new chats? in the last 14 days/ }))
       .toHaveLength(0);

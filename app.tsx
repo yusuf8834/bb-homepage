@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as HoverCard from "@radix-ui/react-hover-card";
@@ -162,6 +162,26 @@ type ProjectArtworkState =
   | { kind: "fallback" | "image" | "loading" }
   | { kind: "glyph"; svg: string };
 
+// Keep the last rendered data for navigation within this app window. Every
+// visit still revalidates it; a full reload starts with an empty cache.
+const projectArtworkById = new Map<string, ProjectArtworkState>();
+let launcherSnapshot: {
+  hiddenIds: readonly string[];
+  pinnedIds: readonly string[];
+  projectGroups: readonly ProjectGroup[];
+  preferencesStatus: "ready" | "error";
+  workspaceStatuses: Readonly<Record<string, WorkspaceStatus>>;
+  workspaceUpdatedAt: number | null;
+} | undefined;
+
+function rememberProjectArtwork(projectId: string, artwork: ProjectArtworkState): void {
+  projectArtworkById.delete(projectId);
+  projectArtworkById.set(projectId, artwork);
+  if (projectArtworkById.size > 128) {
+    projectArtworkById.delete(projectArtworkById.keys().next().value!);
+  }
+}
+
 function FolderIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" className="size-4">
@@ -216,7 +236,11 @@ function ProjectIcon({
   onRename?: () => void;
 }) {
   const rpc = useRpc<typeof rpcContract>();
-  const [artwork, setArtwork] = useState<ProjectArtworkState>({ kind: "loading" });
+  const [artwork, setArtwork] = useState<ProjectArtworkState>(() =>
+    isPersonal || !loadArtwork
+      ? { kind: "fallback" }
+      : projectArtworkById.get(projectId) ?? { kind: "loading" },
+  );
 
   useEffect(() => {
     if (isPersonal || !loadArtwork) {
@@ -225,14 +249,20 @@ function ProjectIcon({
     }
 
     let cancelled = false;
-    setArtwork({ kind: "loading" });
+    setArtwork(projectArtworkById.get(projectId) ?? { kind: "loading" });
     void rpc.call("getProjectArtwork", { projectId }).then(
       (result) => {
+        const next: ProjectArtworkState = result.kind === "missing"
+          ? { kind: "fallback" }
+          : result;
+        rememberProjectArtwork(projectId, next);
         if (cancelled) return;
-        setArtwork(result.kind === "missing" ? { kind: "fallback" } : result);
+        setArtwork(next);
       },
       () => {
-        if (!cancelled) setArtwork({ kind: "fallback" });
+        if (!cancelled) {
+          setArtwork(projectArtworkById.get(projectId) ?? { kind: "fallback" });
+        }
       },
     );
     return () => {
@@ -265,11 +295,13 @@ function ProjectIcon({
         <img
           alt=""
           className="size-8 object-contain"
-          decoding="async"
+          decoding="sync"
           draggable={false}
-          loading="lazy"
           src={`${PROJECT_ICON_URL}?projectId=${encodeURIComponent(projectId)}`}
-          onError={() => setArtwork({ kind: "fallback" })}
+          onError={() => {
+            rememberProjectArtwork(projectId, { kind: "fallback" });
+            setArtwork({ kind: "fallback" });
+          }}
         />
       ) : artwork.kind === "glyph" ? (
         <GlyphIcon svg={artwork.svg} />
@@ -330,16 +362,18 @@ function NewChatSparkline({
   // stretching the drawing.
   const frameRef = useRef<HTMLSpanElement>(null);
   const [measuredWidth, setMeasuredWidth] = useState(0);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const frame = frameRef.current;
-    if (!frame || typeof ResizeObserver === "undefined") return;
+    if (!frame) return;
+    setMeasuredWidth(Math.round(frame.getBoundingClientRect().width));
+    if (typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(([entry]) => {
       const next = Math.round(entry?.contentRect.width ?? 0);
       setMeasuredWidth((current) => (current === next ? current : next));
     });
     observer.observe(frame);
     return () => observer.disconnect();
-  }, []);
+  }, [activity.length, activity.some((count) => count > 0)]);
 
   const total = activity.reduce((sum, count) => sum + count, 0);
   if (total === 0 || activity.length < 2) return null;
@@ -720,7 +754,9 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
   const [projectNameOverrides, setProjectNameOverrides] = useState<
     Readonly<Record<string, ProjectNameOverride>>
   >({});
-  const [hiddenIds, setHiddenIds] = useState<readonly string[]>([]);
+  const [hiddenIds, setHiddenIds] = useState<readonly string[]>(
+    () => launcherSnapshot?.hiddenIds ?? [],
+  );
   const displayedProjects = useMemo(
     () =>
       projects
@@ -775,8 +811,10 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
   const showWorkspaceStatus = settings.showWorkspaceStatus;
   const [workspaceStatuses, setWorkspaceStatuses] = useState<
     Readonly<Record<string, WorkspaceStatus>>
-  >({});
-  const [workspaceUpdatedAt, setWorkspaceUpdatedAt] = useState<number | null>(null);
+  >(() => launcherSnapshot?.workspaceStatuses ?? {});
+  const [workspaceUpdatedAt, setWorkspaceUpdatedAt] = useState<number | null>(
+    () => launcherSnapshot?.workspaceUpdatedAt ?? null,
+  );
   const [isRefreshingWorkspaces, setIsRefreshingWorkspaces] = useState(false);
   const requestedWorkspaceIdsRef = useRef(new Set<string>());
   const workspaceProjectIds = useMemo(
@@ -844,11 +882,15 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
   const sectionDropTargetRef = useRef<ProjectSectionId | null>(null);
   const suppressClickRef = useRef<string | null>(null);
   const sortPointerSelectionRef = useRef(false);
-  const [pinnedIds, setPinnedIds] = useState<readonly string[]>([]);
-  const [projectGroups, setProjectGroups] = useState<readonly ProjectGroup[]>([]);
+  const [pinnedIds, setPinnedIds] = useState<readonly string[]>(
+    () => launcherSnapshot?.pinnedIds ?? [],
+  );
+  const [projectGroups, setProjectGroups] = useState<readonly ProjectGroup[]>(
+    () => launcherSnapshot?.projectGroups ?? [],
+  );
   const [preferencesStatus, setPreferencesStatus] = useState<
     "error" | "loading" | "ready"
-  >("loading");
+  >(() => launcherSnapshot?.preferencesStatus ?? "loading");
   const [actionError, setActionError] = useState<string | null>(null);
   const [collapsedGroupIds, setCollapsedGroupIds] = useState<readonly string[]>(
     readCollapsedGroupIds,
@@ -863,6 +905,13 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
   );
   const groupPointerDragRef = useRef<GroupPointerDragGesture | null>(null);
   const groupDropTargetRef = useRef<GroupDropTarget | null>(null);
+  useEffect(() => {
+    if (preferencesStatus === "loading") return;
+    launcherSnapshot = {
+      hiddenIds, pinnedIds, projectGroups, preferencesStatus,
+      workspaceStatuses, workspaceUpdatedAt,
+    };
+  }, [hiddenIds, pinnedIds, projectGroups, preferencesStatus, workspaceStatuses, workspaceUpdatedAt]);
   useEffect(() => {
     let cancelled = false;
     void Promise.allSettled([

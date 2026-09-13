@@ -4,6 +4,9 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
+- Keep loaded icons, project groups, and checkout counts visible when returning
+  to the new-chat page while fresh data loads. Measure sparklines before paint
+  and load card images eagerly to avoid navigation flicker.
 - Show a Needs you, Failed, or Running pill on project cards whose chats are
   blocked on the user, ended in an unread error, or are still working. Add a
   Needs you filter chip and summarize collapsed groups (2 need you · 1 running).
