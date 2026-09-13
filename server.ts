@@ -5,6 +5,13 @@ import {
   findProjectArtwork,
   type ProjectArtwork,
 } from "./src/project-icons.js";
+import { WORKSPACE_REFRESH_OPTIONS } from "./src/settings.js";
+import type { WorkspaceStatus, WorkspaceWorktree } from "./src/workspace-status.js";
+import {
+  WorkspaceStatusService,
+  type WorkspaceEnvironment,
+  type WorkspaceStatusReading,
+} from "./src/workspace-status-service.js";
 
 const FOUND_CACHE_CONTROL = "private, max-age=300";
 const MISSING_CACHE_CONTROL = "private, max-age=60";
@@ -13,6 +20,50 @@ const HIDDEN_PROJECTS_KEY = "hidden-projects";
 const PROJECT_GROUPS_KEY = "project-groups";
 const MAX_PROJECT_GROUPS = 100;
 const MAX_STORED_PROJECT_IDS = 10_000;
+const MAX_STATUS_PROJECT_IDS = 500;
+const ENVIRONMENT_PAGE_SIZE = 200;
+const MAX_ENVIRONMENT_PAGES = 25;
+
+const workspaceChangesSchema = z
+  .object({
+    files: z.number().int().min(0),
+    insertions: z.number().int().min(0),
+    deletions: z.number().int().min(0),
+    lineStatsComplete: z.boolean(),
+  })
+  .strict();
+
+const workspaceStatusSchema: z.ZodType<WorkspaceStatus> = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("available"),
+      environmentId: z.string(),
+      branch: z.string().nullable(),
+      defaultBranch: z.string().nullable(),
+      changes: workspaceChangesSchema,
+      worktrees: z.number().int().min(0),
+      fetchedAt: z.number(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("unavailable"),
+      environmentId: z.string(),
+      message: z.string(),
+      fetchedAt: z.number(),
+    })
+    .strict(),
+  z.object({ kind: z.literal("none"), fetchedAt: z.number() }).strict(),
+]);
+
+const workspaceWorktreeSchema: z.ZodType<WorkspaceWorktree> = z
+  .object({
+    environmentId: z.string(),
+    name: z.string().nullable(),
+    branch: z.string().nullable(),
+    status: workspaceStatusSchema,
+  })
+  .strict();
 
 const projectGroupSchema = z
   .object({
@@ -110,6 +161,21 @@ export const rpcContract = defineRpcContract({
       z.object({ kind: z.literal("missing") }),
     ]),
   },
+  getProjectWorkspaceStatuses: {
+    input: z
+      .object({
+        projectIds: z.array(z.string().min(1)).max(MAX_STATUS_PROJECT_IDS),
+        refresh: z.boolean().optional(),
+      })
+      .strict(),
+    output: z.object({ statuses: z.record(z.string(), workspaceStatusSchema) }),
+  },
+  listProjectWorktrees: {
+    input: z
+      .object({ projectId: z.string().min(1), refresh: z.boolean().optional() })
+      .strict(),
+    output: z.object({ worktrees: z.array(workspaceWorktreeSchema) }),
+  },
 });
 
 export default function plugin(bb: BbPluginApi) {
@@ -135,7 +201,82 @@ export default function plugin(bb: BbPluginApi) {
       description: "Discover icons and logos from project files.",
       default: true,
     },
+    showWorkspaceStatus: {
+      type: "boolean",
+      label: "Show checkout status",
+      description:
+        "Show each project's checkout branch and uncommitted changes on its card. Runs git status in every listed checkout.",
+      default: true,
+    },
+    workspaceRefresh: {
+      type: "select",
+      label: "Refresh checkout status",
+      description:
+        "How often cards re-read checkout status on their own. The refresh button always works.",
+      options: [...WORKSPACE_REFRESH_OPTIONS],
+      default: "Manual",
+    },
   });
+
+  async function listReadyEnvironments(signal: AbortSignal): Promise<WorkspaceEnvironment[]> {
+    const environments: WorkspaceEnvironment[] = [];
+    for (let page = 0; page < MAX_ENVIRONMENT_PAGES; page += 1) {
+      const batch = await bb.sdk.environments.list({
+        status: "ready",
+        limit: ENVIRONMENT_PAGE_SIZE,
+        offset: page * ENVIRONMENT_PAGE_SIZE,
+        signal,
+      });
+      for (const environment of batch) {
+        environments.push({
+          id: environment.id,
+          projectId: environment.projectId,
+          name: environment.name,
+          branchName: environment.branchName,
+          isGitRepo: environment.isGitRepo,
+          isWorktree: environment.isWorktree,
+          status: environment.status,
+          lifecycle: { phase: environment.lifecycle.phase },
+          workspaceProvisionType: environment.workspaceProvisionType,
+          environmentProviderId: environment.environmentProviderId,
+          updatedAt: environment.updatedAt,
+        });
+      }
+      if (batch.length < ENVIRONMENT_PAGE_SIZE) break;
+    }
+    return environments;
+  }
+
+  async function readWorkspaceStatus(
+    environmentId: string,
+    signal: AbortSignal,
+  ): Promise<WorkspaceStatusReading> {
+    const result = await bb.sdk.environments.status({ environmentId, signal });
+    if (result.outcome === "not_applicable") {
+      return { outcome: "unavailable", message: result.message };
+    }
+    if (result.outcome === "unavailable") {
+      return { outcome: "unavailable", message: result.failure.message };
+    }
+    const { workspace } = result;
+    return {
+      outcome: "available",
+      branch:
+        workspace.branch.currentBranch ??
+        (workspace.checkout.kind === "branch" ? workspace.checkout.branchName : null),
+      defaultBranch: workspace.branch.defaultBranch,
+      files: workspace.workingTree.files.length,
+      insertions: workspace.workingTree.insertions,
+      deletions: workspace.workingTree.deletions,
+      lineStatsComplete: workspace.workingTree.lineStatsComplete,
+    };
+  }
+
+  const workspaceStatuses = new WorkspaceStatusService({
+    listEnvironments: listReadyEnvironments,
+    readStatus: readWorkspaceStatus,
+  });
+  bb.onDispose(() => workspaceStatuses.dispose());
 
   function normalizeStoredProjectIds(stored: unknown): string[] {
     if (!Array.isArray(stored)) return [];
@@ -345,6 +486,16 @@ export default function plugin(bb: BbPluginApi) {
       return artwork.kind === "glyph"
         ? { kind: "glyph" as const, svg: artwork.svg }
         : { kind: "image" as const };
+    },
+    async getProjectWorkspaceStatuses({ projectIds, refresh }) {
+      return {
+        statuses: await workspaceStatuses.getCheckoutStatuses(projectIds, refresh === true),
+      };
+    },
+    async listProjectWorktrees({ projectId, refresh }) {
+      return {
+        worktrees: await workspaceStatuses.getWorktrees(projectId, refresh === true),
+      };
     },
   });
 

@@ -243,6 +243,8 @@ describe("project icon route", () => {
       showUnusedProjects: { type: "boolean", default: true },
       includePersonalProject: { type: "boolean", default: true },
       loadProjectIcons: { type: "boolean", default: true },
+      showWorkspaceStatus: { type: "boolean", default: true },
+      workspaceRefresh: { type: "select", default: "Manual" },
     });
   });
 
@@ -456,5 +458,219 @@ describe("project app opening context", () => {
         ports: [1234],
       });
     expect(harness.inspection.sdk.callsTo("projects.get")).toEqual([[{ projectId: "project-1" }]]);
+  });
+});
+
+describe("checkout status", () => {
+  function environment(overrides: Record<string, unknown>) {
+    return {
+      id: "env",
+      projectId: "alpha",
+      name: null,
+      hostId: "host",
+      path: "/repo",
+      isGitRepo: true,
+      isWorktree: false,
+      branchName: "main",
+      baseBranch: null,
+      defaultBranch: "main",
+      mergeBaseBranch: null,
+      status: "ready",
+      environmentProviderId: "project-checkout",
+      lifecycle: { phase: "active", retireAt: null, teardown: null },
+      environmentProviderSelection: null,
+      environmentProviderInstanceKey: null,
+      managed: false,
+      workspaceProvisionType: "unmanaged",
+      createdAt: 1,
+      updatedAt: 2,
+      ...overrides,
+    };
+  }
+
+  function availableStatus(overrides: {
+    branch?: string;
+    files?: number;
+    insertions?: number;
+    deletions?: number;
+  } = {}) {
+    const files = Array.from({ length: overrides.files ?? 0 }, (_, index) => ({
+      path: `file-${index}.ts`,
+      status: "M",
+      insertions: null,
+      deletions: null,
+    }));
+    return {
+      outcome: "available",
+      workspace: {
+        workingTree: {
+          insertions: overrides.insertions ?? 0,
+          deletions: overrides.deletions ?? 0,
+          lineStatsComplete: true,
+          files,
+          hasUncommittedChanges: files.length > 0,
+          state: files.length > 0 ? "dirty" : "clean",
+        },
+        checkout: { kind: "branch", branchName: overrides.branch ?? "main", headSha: "abc" },
+        branch: { currentBranch: overrides.branch ?? "main", defaultBranch: "main" },
+        mergeBase: null,
+      },
+    };
+  }
+
+  it("declares checkout status settings", () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "homepage" });
+    plugin(bb);
+    expect(harness.inspection.registrations.settingsDescriptors).toMatchObject({
+      showWorkspaceStatus: { type: "boolean", default: true },
+      workspaceRefresh: {
+        type: "select",
+        default: "Manual",
+        options: ["Manual", "Every minute", "Every 5 minutes", "Every 15 minutes"],
+      },
+    });
+  });
+
+  it("reads each project's checkout once until a refresh is requested", async () => {
+    const status = vi.fn(async ({ environmentId }: { environmentId: string }) =>
+      environmentId === "alpha-checkout"
+        ? availableStatus({ branch: "feature", files: 2, insertions: 537, deletions: 119 })
+        : {
+            outcome: "unavailable",
+            failure: { code: "path_not_found", message: "Path is gone", workspacePath: "/x" },
+          },
+    );
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "homepage",
+      sdk: {
+        environments: {
+          list: vi.fn(async () => [
+            environment({ id: "alpha-checkout" }),
+            environment({ id: "alpha-worktree", isWorktree: true, branchName: "bb/feature" }),
+            environment({ id: "alpha-old", environmentProviderId: null, updatedAt: 99 }),
+            environment({ id: "beta-missing", projectId: "beta", environmentProviderId: null }),
+            environment({ id: "gamma-provisioning", projectId: "gamma", status: "provisioning" }),
+            environment({ id: "delta-personal", projectId: "delta", workspaceProvisionType: "personal" }),
+          ]),
+          status,
+        },
+      },
+    });
+    plugin(bb);
+
+    const first = await harness.behavior.callRpc("getProjectWorkspaceStatuses", {
+      projectIds: ["alpha", "beta", "gamma", "delta", "unknown"],
+    }) as { statuses: Record<string, Record<string, unknown>> };
+    expect(first.statuses.alpha).toMatchObject({
+      kind: "available",
+      environmentId: "alpha-checkout",
+      branch: "feature",
+      defaultBranch: "main",
+      changes: { files: 2, insertions: 537, deletions: 119, lineStatsComplete: true },
+      worktrees: 1,
+    });
+    expect(first.statuses.beta).toMatchObject({
+      kind: "unavailable",
+      environmentId: "beta-missing",
+      message: "Path is gone",
+    });
+    expect(first.statuses.gamma).toMatchObject({ kind: "none" });
+    expect(first.statuses.delta).toMatchObject({ kind: "none" });
+    expect(first.statuses.unknown).toMatchObject({ kind: "none" });
+    expect(harness.inspection.sdk.callsTo("environments.list")).toHaveLength(1);
+    expect(status).toHaveBeenCalledTimes(2);
+
+    await harness.behavior.callRpc("getProjectWorkspaceStatuses", { projectIds: ["alpha"] });
+    expect(harness.inspection.sdk.callsTo("environments.list")).toHaveLength(1);
+    expect(status).toHaveBeenCalledTimes(2);
+
+    await harness.behavior.callRpc("getProjectWorkspaceStatuses", {
+      projectIds: ["alpha"],
+      refresh: true,
+    });
+    expect(harness.inspection.sdk.callsTo("environments.list")).toHaveLength(2);
+    expect(status).toHaveBeenCalledTimes(3);
+  });
+
+  it("lists a project's ready worktrees with their own status", async () => {
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "homepage",
+      sdk: {
+        environments: {
+          list: vi.fn(async () => [
+            environment({ id: "alpha-checkout" }),
+            environment({
+              id: "alpha-wt-clean",
+              isWorktree: true,
+              branchName: "bb/clean",
+              environmentProviderId: "git-worktree",
+              updatedAt: 5,
+            }),
+            environment({
+              id: "alpha-wt-dirty",
+              isWorktree: true,
+              branchName: "bb/dirty",
+              environmentProviderId: "git-worktree",
+              updatedAt: 9,
+            }),
+            environment({
+              id: "alpha-wt-gone",
+              isWorktree: true,
+              branchName: "bb/gone",
+              status: "destroyed",
+              lifecycle: { phase: "destroyed", retireAt: null, teardown: null },
+            }),
+            environment({ id: "beta-wt", projectId: "beta", isWorktree: true }),
+          ]),
+          status: vi.fn(async ({ environmentId }: { environmentId: string }) =>
+            environmentId === "alpha-wt-dirty"
+              ? availableStatus({ branch: "bb/dirty", files: 1, insertions: 3, deletions: 0 })
+              : environmentId === "alpha-wt-clean"
+                ? availableStatus({ branch: "bb/clean" })
+                : { outcome: "not_applicable", reason: "non_git_environment", message: "Not git" },
+          ),
+        },
+      },
+    });
+    plugin(bb);
+
+    const result = await harness.behavior.callRpc("listProjectWorktrees", {
+      projectId: "alpha",
+    }) as { worktrees: Array<Record<string, unknown>> };
+    expect(result.worktrees.map((worktree) => worktree.environmentId)).toEqual([
+      "alpha-wt-dirty",
+      "alpha-wt-clean",
+    ]);
+    expect(result.worktrees[0]).toMatchObject({
+      branch: "bb/dirty",
+      status: { kind: "available", changes: { files: 1, insertions: 3, deletions: 0 } },
+    });
+    expect(result.worktrees[1]).toMatchObject({
+      branch: "bb/clean",
+      status: { kind: "available", changes: { files: 0 } },
+    });
+  });
+
+  it("reports a failed status read as unavailable instead of failing the page", async () => {
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "homepage",
+      sdk: {
+        environments: {
+          list: vi.fn(async () => [environment({ id: "alpha-checkout" })]),
+          status: vi.fn(async () => {
+            throw new Error("git exploded");
+          }),
+        },
+      },
+    });
+    plugin(bb);
+
+    const result = await harness.behavior.callRpc("getProjectWorkspaceStatuses", {
+      projectIds: ["alpha"],
+    }) as { statuses: Record<string, Record<string, unknown>> };
+    expect(result.statuses.alpha).toMatchObject({
+      kind: "unavailable",
+      message: "git exploded",
+    });
   });
 });

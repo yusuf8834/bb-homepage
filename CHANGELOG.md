@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented here.
 
+## Unreleased
+
+- Show a Needs you, Failed, or Running pill on project cards whose chats are
+  blocked on the user, ended in an unread error, or are still working. Add a
+  Needs you filter chip and summarize collapsed groups (2 need you · 1 running).
+- Show each project's uncommitted changes in a two-line right-hand card
+  column, with a branch glyph when the checkout is off its default branch, with a hover list of the project's worktrees when it
+  has any. The chat count stays under the name and the sparkline stretches to
+  fill whatever room the card has left, so the name and status keep theirs. Status loads once per page,
+  refreshes from a toolbar button, and can optionally refresh on a timer from
+  plugin settings. Reads are cached briefly and capped in parallel.
+- Remove the decorative plus icon from project cards; clicking the card
+  already starts a chat.
+
 ## 0.2.3 - 2026-09-12
 
 - Stop fuzzy image searches from selecting screenshots and unrelated assets as

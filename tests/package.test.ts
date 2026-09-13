@@ -11,6 +11,7 @@ describe("package boundaries", () => {
         /^zod$/,
         /^@radix-ui\/react-context-menu$/,
         /^@radix-ui\/react-dropdown-menu$/,
+        /^@radix-ui\/react-hover-card$/,
         /^@testing-library\/react$/,
         /^vitest\/config$/,
       ],

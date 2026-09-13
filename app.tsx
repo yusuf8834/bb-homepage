@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import * as HoverCard from "@radix-ui/react-hover-card";
 import {
   definePluginApp,
   experimental_useSidebarThreadActions,
@@ -16,6 +17,15 @@ import type {
   PluginSidebarThread,
 } from "@get-bb/plugin-sdk/app";
 import { buildNewChatActivityByProject } from "./src/activity.js";
+import {
+  buildProjectAttention,
+  formatAttention,
+  primaryAttention,
+  sumAttention,
+  summarizeAttention,
+  type AttentionKind,
+  type ProjectAttention,
+} from "./src/attention.js";
 import { ProjectOpenMenu } from "./src/ProjectOpenMenu.js";
 import { formatRelativeTime } from "./src/relative-time.js";
 import type { ProjectGroup, rpcContract } from "./server.js";
@@ -23,9 +33,19 @@ import {
   parseHomepageSettings,
   parseRankingMode,
   RANKING_OPTIONS,
+  workspaceRefreshIntervalMs,
   type HomepageSettings,
   type RankingMode,
 } from "./src/settings.js";
+import {
+  formatFileCount,
+  isOnDefaultBranch,
+  type WorkspaceChanges,
+  type WorkspaceStatus,
+  type WorkspaceWorktree,
+} from "./src/workspace-status.js";
+
+type AvailableWorkspaceStatus = Extract<WorkspaceStatus, { kind: "available" }>;
 
 const PROJECT_ICON_URL = "/api/v1/plugins/homepage/http/project-icon";
 const RANKING_STORAGE_KEY = "bb-plugin-homepage:ranking-mode";
@@ -288,6 +308,8 @@ function buildSmoothLinePath(
   return path;
 }
 
+const SPARKLINE_FALLBACK_WIDTH = 88;
+
 function NewChatSparkline({
   projectName,
   activity,
@@ -303,11 +325,26 @@ function NewChatSparkline({
     const frame = window.requestAnimationFrame(() => setDrawn(true));
     return () => window.cancelAnimationFrame(frame);
   }, [animate]);
+  // The sparkline fills whatever the card leaves between the name and the
+  // status column, so the viewBox follows the measured width instead of
+  // stretching the drawing.
+  const frameRef = useRef<HTMLSpanElement>(null);
+  const [measuredWidth, setMeasuredWidth] = useState(0);
+  useEffect(() => {
+    const frame = frameRef.current;
+    if (!frame || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(([entry]) => {
+      const next = Math.round(entry?.contentRect.width ?? 0);
+      setMeasuredWidth((current) => (current === next ? current : next));
+    });
+    observer.observe(frame);
+    return () => observer.disconnect();
+  }, []);
 
   const total = activity.reduce((sum, count) => sum + count, 0);
   if (total === 0 || activity.length < 2) return null;
 
-  const width = 72;
+  const width = measuredWidth > 0 ? measuredWidth : SPARKLINE_FALLBACK_WIDTH;
   const height = 24;
   const baseline = height - 2;
   const chartTop = 3;
@@ -322,13 +359,13 @@ function NewChatSparkline({
   const latest = points.at(-1)!;
 
   return (
-    <span className="shrink-0" title={label}>
+    <span ref={frameRef} className="hidden min-w-0 flex-1 @[18rem]:block" title={label}>
       <svg
         role="img"
         aria-label={label}
         data-sparkline-entrance={animate ? "" : undefined}
         viewBox={`0 0 ${width} ${height}`}
-        className="h-6 w-[72px] overflow-visible text-primary/70 transition-colors group-hover:text-primary [transition:clip-path_500ms_ease-out,color_150ms] motion-reduce:transition-none"
+        className="block h-6 w-full overflow-visible text-primary/70 transition-colors group-hover:text-primary [transition:clip-path_500ms_ease-out,color_150ms] motion-reduce:transition-none"
         style={{ clipPath: drawn ? "inset(-4px)" : "inset(-4px 100% -4px -4px)" }}
       >
         <path d={area} fill="currentColor" fillOpacity="0.1" />
@@ -344,6 +381,253 @@ function NewChatSparkline({
         <circle cx={latest.x} cy={latest.y} r="1.75" fill="currentColor" />
       </svg>
     </span>
+  );
+}
+
+const ATTENTION_PILL_CLASSES: Record<AttentionKind, string> = {
+  needsYou: "bg-primary/10 text-primary",
+  failed: "bg-destructive/10 text-destructive",
+  running: "bg-muted text-muted-foreground",
+};
+
+/** The one live state worth a glance: blocked on you, failed, or working. */
+function AttentionPill({ attention }: { attention: ProjectAttention | undefined }) {
+  const primary = primaryAttention(attention);
+  if (!primary) return null;
+  return (
+    <span
+      data-attention={primary.kind}
+      className={`inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-px text-[10px] font-medium leading-4 ${
+        ATTENTION_PILL_CLASSES[primary.kind]
+      }`}
+    >
+      {primary.kind === "running" ? (
+        <span
+          aria-hidden="true"
+          className="size-1.5 rounded-full bg-current animate-pulse motion-reduce:animate-none"
+        />
+      ) : null}
+      {formatAttention(primary.kind, primary.count)}
+    </span>
+  );
+}
+
+function GroupAttentionSummary({
+  projects,
+  attentionByProject,
+}: {
+  projects: readonly RankedProject[];
+  attentionByProject: ReadonlyMap<string, ProjectAttention>;
+}) {
+  const summary = summarizeAttention(
+    sumAttention(projects.map((project) => attentionByProject.get(project.id))),
+  );
+  if (!summary) return null;
+  return (
+    <span
+      data-group-summary=""
+      className="ml-1 truncate font-normal normal-case tracking-normal text-muted-foreground"
+    >
+      {summary}
+    </span>
+  );
+}
+
+function WorkspaceChangesText({ changes }: { changes: WorkspaceChanges }) {
+  if (changes.files === 0) return <>No change</>;
+  return (
+    <>
+      {formatFileCount(changes.files)},{" "}
+      <span className="text-diff-added">+{changes.insertions}</span>{" "}
+      <span className="text-diff-removed">-{changes.deletions}</span>
+    </>
+  );
+}
+
+/** A small branch glyph that stands in for the branch name; the name lives in its tooltip. */
+function BranchMark({ branch }: { branch: string | null }) {
+  const name = branch ?? "a detached commit";
+  return (
+    <span
+      data-workspace-branch=""
+      role="img"
+      aria-label={`On ${name}`}
+      title={name}
+      className="inline-flex shrink-0 text-muted-foreground"
+    >
+      <svg viewBox="0 0 12 12" fill="none" className="size-3" aria-hidden="true">
+        <circle cx="3" cy="2.5" r="1.4" stroke="currentColor" strokeWidth="1.2" />
+        <circle cx="3" cy="9.5" r="1.4" stroke="currentColor" strokeWidth="1.2" />
+        <circle cx="9" cy="4" r="1.4" stroke="currentColor" strokeWidth="1.2" />
+        <path
+          d="M3 3.9v4.2M9 5.4c0 1.6-1.2 2.4-3 2.6-1.2.2-2.4.5-3 .9"
+          stroke="currentColor"
+          strokeWidth="1.2"
+          strokeLinecap="round"
+        />
+      </svg>
+    </span>
+  );
+}
+
+/** Right-hand card column: file count over line counts, with a branch mark when off the default. */
+function WorkspaceStatusBlock({ status }: { status: AvailableWorkspaceStatus }) {
+  const mark = !isOnDefaultBranch(status) ? <BranchMark branch={status.branch} /> : null;
+  if (status.changes.files === 0) {
+    return (
+      <span data-workspace-changes="" className="flex flex-col items-end">
+        <span className="flex items-center gap-1 whitespace-nowrap">
+          {mark}
+          No
+        </span>
+        <span className="whitespace-nowrap">Change</span>
+      </span>
+    );
+  }
+  return (
+    <span data-workspace-changes="" className="flex flex-col items-end">
+      <span className="flex items-center gap-1 whitespace-nowrap">
+        {mark}
+        {formatFileCount(status.changes.files)}
+      </span>
+      <span className="whitespace-nowrap">
+        <span className="text-diff-added">+{status.changes.insertions}</span>{" "}
+        <span className="text-diff-removed">-{status.changes.deletions}</span>
+      </span>
+    </span>
+  );
+}
+
+const WORKSPACE_COLUMN_CLASSES =
+  "ml-auto flex shrink-0 flex-col items-end text-right text-xs leading-4 text-muted-foreground";
+
+function WorktreeRow({
+  label,
+  branch,
+  status,
+}: {
+  label?: string;
+  branch: string | null;
+  status: WorkspaceStatus;
+}) {
+  const name = branch ?? "detached";
+  return (
+    <div className="flex items-center justify-between gap-3 px-1 py-0.5">
+      <span className="min-w-0 truncate text-foreground" title={name}>
+        {label ? <span className="text-muted-foreground">{label} · </span> : null}
+        {name}
+      </span>
+      <span className="shrink-0 text-muted-foreground">
+        {status.kind === "available" ? (
+          <WorkspaceChangesText changes={status.changes} />
+        ) : (
+          "Unavailable"
+        )}
+      </span>
+    </div>
+  );
+}
+
+function WorktreeList({
+  projectId,
+  checkout,
+}: {
+  projectId: string;
+  checkout: AvailableWorkspaceStatus;
+}) {
+  const rpc = useRpc<typeof rpcContract>();
+  const [state, setState] = useState<readonly WorkspaceWorktree[] | "error" | "loading">(
+    "loading",
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    setState("loading");
+    void rpc.call("listProjectWorktrees", { projectId }).then(
+      ({ worktrees }) => {
+        if (!cancelled) setState(worktrees);
+      },
+      () => {
+        if (!cancelled) setState("error");
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, rpc]);
+
+  return (
+    <div className="flex flex-col gap-0.5">
+      <WorktreeRow label="Checkout" branch={checkout.branch} status={checkout} />
+      <p className="mt-1.5 px-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+        Worktrees
+      </p>
+      {state === "loading" ? (
+        <p className="px-1 text-muted-foreground">Loading worktrees...</p>
+      ) : state === "error" ? (
+        <p role="alert" className="px-1 text-destructive">
+          Worktrees could not be loaded.
+        </p>
+      ) : state.length === 0 ? (
+        <p className="px-1 text-muted-foreground">No worktrees</p>
+      ) : (
+        state.map((worktree) => (
+          <WorktreeRow
+            key={worktree.environmentId}
+            branch={worktree.branch ?? worktree.name}
+            status={worktree.status}
+          />
+        ))
+      )}
+    </div>
+  );
+}
+
+/** Hovering a card's status line lists the project's worktrees, loaded on demand. */
+function WorkspaceHoverCard({
+  projectId,
+  status,
+  children,
+}: {
+  projectId: string;
+  status: AvailableWorkspaceStatus;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <HoverCard.Root open={open} onOpenChange={setOpen} openDelay={300} closeDelay={150}>
+      <HoverCard.Trigger asChild>{children}</HoverCard.Trigger>
+      <HoverCard.Portal>
+        <HoverCard.Content
+          data-bb-plugin="homepage"
+          align="start"
+          side="bottom"
+          sideOffset={6}
+          className="z-50 w-72 rounded-md border border-border bg-card p-2 text-xs shadow-md"
+        >
+          {open ? <WorktreeList projectId={projectId} checkout={status} /> : null}
+        </HoverCard.Content>
+      </HoverCard.Portal>
+    </HoverCard.Root>
+  );
+}
+
+function RefreshIcon({ spinning }: { spinning: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      fill="none"
+      className={`size-4 ${spinning ? "animate-spin motion-reduce:animate-none" : ""}`}
+      aria-hidden="true"
+    >
+      <path
+        d="M13.25 8a5.25 5.25 0 1 1-1.54-3.71M13.25 2.75V6h-3.25"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 
@@ -455,6 +739,24 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
     () => buildNewChatActivityByProject(threads),
     [threads],
   );
+  const attentionByProject = useMemo(() => buildProjectAttention(threads), [threads]);
+  const [attentionFilter, setAttentionFilter] = useState(false);
+  const needsYouProjectCount = useMemo(
+    () =>
+      rankedProjects.filter(
+        (project) => (attentionByProject.get(project.id)?.needsYou ?? 0) > 0,
+      ).length,
+    [attentionByProject, rankedProjects],
+  );
+  const visibleProjects = useMemo(
+    () =>
+      attentionFilter
+        ? rankedProjects.filter(
+            (project) => (attentionByProject.get(project.id)?.needsYou ?? 0) > 0,
+          )
+        : rankedProjects,
+    [attentionByProject, attentionFilter, rankedProjects],
+  );
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 60_000);
@@ -462,6 +764,72 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
   }, []);
 
   const rpc = useRpc<typeof rpcContract>();
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const showWorkspaceStatus = settings.showWorkspaceStatus;
+  const [workspaceStatuses, setWorkspaceStatuses] = useState<
+    Readonly<Record<string, WorkspaceStatus>>
+  >({});
+  const [workspaceUpdatedAt, setWorkspaceUpdatedAt] = useState<number | null>(null);
+  const [isRefreshingWorkspaces, setIsRefreshingWorkspaces] = useState(false);
+  const requestedWorkspaceIdsRef = useRef(new Set<string>());
+  const workspaceProjectIds = useMemo(
+    () => rankedProjects.filter((project) => !project.isPersonal).map((project) => project.id),
+    [rankedProjects],
+  );
+  const workspaceProjectIdsKey = workspaceProjectIds.join("\n");
+
+  function loadWorkspaceStatuses(projectIds: readonly string[], refresh: boolean): void {
+    if (projectIds.length === 0) return;
+    for (const projectId of projectIds) requestedWorkspaceIdsRef.current.add(projectId);
+    if (refresh) setIsRefreshingWorkspaces(true);
+    void rpc
+      .call("getProjectWorkspaceStatuses", { projectIds: [...projectIds], refresh })
+      .then(
+        ({ statuses }) => {
+          if (!mountedRef.current) return;
+          setWorkspaceStatuses((current) => ({ ...current, ...statuses }));
+          setWorkspaceUpdatedAt(Date.now());
+        },
+        () => {
+          if (!mountedRef.current) return;
+          for (const projectId of projectIds) requestedWorkspaceIdsRef.current.delete(projectId);
+          if (refresh) setActionError("Checkout status could not be refreshed.");
+        },
+      )
+      .finally(() => {
+        if (mountedRef.current && refresh) setIsRefreshingWorkspaces(false);
+      });
+  }
+
+  useEffect(() => {
+    if (!showWorkspaceStatus) return;
+    loadWorkspaceStatuses(
+      workspaceProjectIds.filter((id) => !requestedWorkspaceIdsRef.current.has(id)),
+      false,
+    );
+  }, [showWorkspaceStatus, workspaceProjectIdsKey]);
+
+  const workspaceRefreshMs = workspaceRefreshIntervalMs(settings.workspaceRefresh);
+  useEffect(() => {
+    if (!showWorkspaceStatus || workspaceRefreshMs === null) return;
+    const timer = window.setInterval(
+      () => loadWorkspaceStatuses(workspaceProjectIds, false),
+      workspaceRefreshMs,
+    );
+    return () => window.clearInterval(timer);
+  }, [showWorkspaceStatus, workspaceRefreshMs, workspaceProjectIdsKey]);
+
+  function refreshWorkspaceStatuses(): void {
+    setActionError(null);
+    loadWorkspaceStatuses(workspaceProjectIds, true);
+  }
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
   const [renameName, setRenameName] = useState("");
   const [renameError, setRenameError] = useState<string | null>(null);
@@ -1054,18 +1422,21 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
 
   const pinnedProjects =
     rankingMode === "Manual"
-      ? rankedProjects.filter((project) => pinnedIds.includes(project.id))
+      ? visibleProjects.filter((project) => pinnedIds.includes(project.id))
       : pinnedIds
-          .map((id) => rankedProjects.find((project) => project.id === id))
+          .map((id) => visibleProjects.find((project) => project.id === id))
           .filter((project): project is RankedProject => project !== undefined);
   const groupedProjects = projectGroups.map((group) => ({
     group,
-    projects: rankedProjects.filter(
+    projects: visibleProjects.filter(
       (project) =>
         !pinnedIds.includes(project.id) && projectGroupIds.get(project.id) === group.id,
     ),
   }));
-  const ungroupedProjects = rankedProjects.filter(
+  const visibleGroupedProjects = attentionFilter
+    ? groupedProjects.filter(({ projects: projectsInGroup }) => projectsInGroup.length > 0)
+    : groupedProjects;
+  const ungroupedProjects = visibleProjects.filter(
     (project) =>
       !pinnedIds.includes(project.id) && !projectGroupIds.has(project.id),
   );
@@ -1081,7 +1452,11 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
     const isPinned = pinnedIds.includes(project.id);
     const currentGroupId = projectGroupIds.get(project.id) ?? null;
     const isEditing = renameTarget?.id === project.id;
-    const isManual = rankingMode === "Manual";
+    const isManual = rankingMode === "Manual" && !attentionFilter;
+    const attention = attentionByProject.get(project.id);
+    const workspace =
+      showWorkspaceStatus && !project.isPersonal ? workspaceStatuses[project.id] : undefined;
+    const workspaceLine = workspace?.kind === "available" ? workspace : null;
     const manualSectionProjects = isManual
       ? rankedProjects.filter(
           (candidate) =>
@@ -1094,7 +1469,7 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
     const isDragging = draggedProjectId === project.id;
     const activity = activityByProject.get(project.id) ?? [];
     const className = [
-      "flex w-full min-w-0 items-center gap-3 rounded-lg border bg-card px-4 py-3 text-left transition-colors group-hover:border-foreground/20 group-hover:bg-state-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+      "@container flex w-full min-w-0 items-center gap-3 rounded-lg border bg-card px-4 py-3 text-left transition-colors group-hover:border-foreground/20 group-hover:bg-state-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
       isCurrent ? "border-foreground/20 bg-state-hover" : "border-border",
       !isEditing ? (isDragging ? "cursor-grabbing select-none" : "cursor-pointer") : "",
       isDragging ? "opacity-50" : "",
@@ -1113,7 +1488,7 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
             project.isPersonal || isEditing ? undefined : () => startRenaming(project)
           }
         />
-        <span className="min-w-0 flex-1">
+        <span className="min-w-0">
           {isEditing ? (
             <input
               autoFocus
@@ -1143,8 +1518,11 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
               onBlur={cancelRenaming}
             />
           ) : (
-            <span className="block truncate text-sm font-medium text-foreground">
-              {project.name}
+            <span className="flex min-w-0 items-center gap-1.5 overflow-hidden">
+              <span className="truncate text-sm font-medium text-foreground">
+                {project.name}
+              </span>
+              <AttentionPill attention={attention} />
             </span>
           )}
           {renameError && isEditing ? (
@@ -1160,26 +1538,31 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
           ) : null}
         </span>
         {!isEditing ? (
-          <>
-            <NewChatSparkline
-              projectName={project.name}
-              activity={activity}
-              animate={animateSparklinesRef.current}
-            />
-            <span
-              aria-hidden="true"
-              className="flex size-6 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors group-hover:border-primary group-hover:text-primary"
-            >
-              <svg viewBox="0 0 16 16" fill="none" className="size-3.5">
-                <path
-                  d="M8 3.25v9.5M3.25 8h9.5"
-                  stroke="currentColor"
-                  strokeWidth="1.6"
-                  strokeLinecap="round"
-                />
-              </svg>
+          <NewChatSparkline
+            projectName={project.name}
+            activity={activity}
+            animate={animateSparklinesRef.current}
+          />
+        ) : null}
+        {!isEditing && showWorkspaceStatus && !project.isPersonal ? (
+          workspaceLine && workspaceLine.worktrees > 0 ? (
+            <WorkspaceHoverCard projectId={project.id} status={workspaceLine}>
+              <span
+                data-workspace-status=""
+                data-workspace-worktrees={workspaceLine.worktrees}
+                className={WORKSPACE_COLUMN_CLASSES}
+              >
+                <WorkspaceStatusBlock status={workspaceLine} />
+              </span>
+            </WorkspaceHoverCard>
+          ) : workspaceLine ? (
+            <span data-workspace-status="" className={WORKSPACE_COLUMN_CLASSES}>
+              <WorkspaceStatusBlock status={workspaceLine} />
             </span>
-          </>
+          ) : (
+            // Keep the column so sparklines line up across cards without a checkout.
+            <span aria-hidden="true" className={WORKSPACE_COLUMN_CLASSES} />
+          )
         ) : null}
       </>
     );
@@ -1399,6 +1782,39 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
         data-homepage-sort=""
         className="absolute -top-9 right-0 z-10 flex items-center justify-end gap-2"
       >
+        {needsYouProjectCount > 0 || attentionFilter ? (
+          <button
+            type="button"
+            aria-pressed={attentionFilter}
+            className={`flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
+              attentionFilter
+                ? "border-primary bg-primary/10 text-primary"
+                : "border-border bg-card text-muted-foreground hover:bg-state-hover hover:text-foreground"
+            }`}
+            onClick={() => setAttentionFilter((current) => !current)}
+          >
+            <span>Needs you</span>
+            <span className="rounded-full bg-primary/10 px-1.5 text-[10px] leading-4 text-primary">
+              {needsYouProjectCount}
+            </span>
+          </button>
+        ) : null}
+        {showWorkspaceStatus ? (
+          <button
+            type="button"
+            aria-label="Refresh checkout status"
+            title={
+              workspaceUpdatedAt === null
+                ? "Refresh checkout status"
+                : `Updated ${formatRelativeTime(workspaceUpdatedAt, now)}`
+            }
+            disabled={isRefreshingWorkspaces}
+            className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-state-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
+            onClick={refreshWorkspaceStatuses}
+          >
+            <RefreshIcon spinning={isRefreshingWorkspaces} />
+          </button>
+        ) : null}
         <button
           type="button"
           aria-label="New group"
@@ -1541,7 +1957,15 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
           )}
         </div>
       ) : null}
-      {groupedProjects.map(({ group, projects: projectsInGroup }, groupIndex) => (
+      {attentionFilter && visibleProjects.length === 0 ? (
+        <p
+          role="status"
+          className="rounded-lg border border-dashed border-border px-4 py-3 text-center text-xs text-muted-foreground"
+        >
+          Nothing needs you right now.
+        </p>
+      ) : null}
+      {visibleGroupedProjects.map(({ group, projects: projectsInGroup }, groupIndex) => (
         <div
           key={group.id}
           data-project-group-id={group.id}
@@ -1642,6 +2066,12 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
               onClick={() => toggleGroupCollapsed(group.id)}
             >
               <span className="truncate">{group.name}</span>
+              {collapsedGroupIds.includes(group.id) ? (
+                <GroupAttentionSummary
+                  projects={projectsInGroup}
+                  attentionByProject={attentionByProject}
+                />
+              ) : null}
               <svg
                 viewBox="0 0 12 12"
                 fill="none"

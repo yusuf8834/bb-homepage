@@ -71,6 +71,25 @@ function firePointer(
   fireEvent(element, event);
 }
 
+
+/**
+ * floating-ui asks `matches(":modal")` while positioning a popover. jsdom's
+ * selector engine answers that by rescanning the document for `:fullscreen`,
+ * which takes seconds per open. jsdom has no top layer, so answer no directly.
+ */
+function stubTopLayerSelectors(): () => void {
+  const originalMatches = Element.prototype.matches;
+  Element.prototype.matches = function matches(this: Element, selector: string) {
+    if (selector === ":modal" || selector === ":popover-open" || selector === ":fullscreen") {
+      return false;
+    }
+    return originalMatches.call(this, selector);
+  };
+  return () => {
+    Element.prototype.matches = originalMatches;
+  };
+}
+
 async function waitForPreferences(container: HTMLElement): Promise<void> {
   await waitFor(() => {
     expect(container.textContent).not.toBe("Loading projects...");
@@ -310,6 +329,8 @@ describe("project chat launcher", () => {
       resetHiddenProjects: () => ({ projectIds: [] }),
       renameProject: ({ projectId, name }) => ({ projectId, name }),
       getProjectArtwork: () => ({ kind: "missing" }),
+      getProjectWorkspaceStatuses: () => ({ statuses: {} }),
+      listProjectWorktrees: () => ({ worktrees: [] }),
     };
     const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {
       rpc: pinHandlers,
@@ -356,6 +377,8 @@ describe("project chat launcher", () => {
       resetHiddenProjects: () => ({ projectIds: [] }),
       renameProject: ({ projectId, name }) => ({ projectId, name }),
       getProjectArtwork: () => ({ kind: "missing" }),
+      getProjectWorkspaceStatuses: () => ({ statuses: {} }),
+      listProjectWorktrees: () => ({ worktrees: [] }),
     };
     const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {
       rpc: rpcHandlers,
@@ -750,6 +773,8 @@ describe("project chat launcher", () => {
       resetHiddenProjects: () => ({ projectIds: [] }),
       renameProject: ({ projectId, name }) => ({ projectId, name }),
       getProjectArtwork: () => ({ kind: "missing" }),
+      getProjectWorkspaceStatuses: () => ({ statuses: {} }),
+      listProjectWorktrees: () => ({ worktrees: [] }),
     };
     const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {
       rpc: rpcHandlers,
@@ -802,11 +827,12 @@ describe("project chat launcher", () => {
     expect(sparkline.querySelectorAll("path")).toHaveLength(2);
     expect(sparkline.querySelectorAll("circle")).toHaveLength(1);
     expect(slot.queryByRole("img", { name: /^Idle:/ })).toBeNull();
+    // Cards carry no decorative plus icon; the card itself is the action.
     expect(
       slot.container.querySelectorAll(
         'button[aria-label^="Start a new chat"] svg[viewBox="0 0 16 16"]',
       ),
-    ).toHaveLength(2);
+    ).toHaveLength(0);
 
     slot.lifecycle.unmount();
   });
@@ -1154,6 +1180,324 @@ describe("project chat launcher", () => {
     expect(slot.container.querySelectorAll('svg[viewBox="0 0 24 24"]')).toHaveLength(2);
 
     slot.lifecycle.unmount();
+  });
+
+  it("shows an attention pill per card and summarizes collapsed groups", async () => {
+    const groups = [{ id: "work", name: "Work", projectIds: ["alpha", "beta"] }];
+    const app = await loadPluginApp(() => import("../app"));
+    const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {
+      rpc: {
+        listPinnedProjects: () => ({ projectIds: [] }),
+        listProjectGroups: () => ({ groups }),
+        listHiddenProjects: () => ({ projectIds: [] }),
+      },
+      sidebarThreads: {
+        projects: [
+          { id: "alpha", name: "Alpha", isPersonal: false },
+          { id: "beta", name: "Beta", isPersonal: false },
+          { id: "gamma", name: "Gamma", isPersonal: false },
+          { id: "delta", name: "Delta", isPersonal: false },
+        ],
+        threads: [
+          { ...thread("alpha-ask", "alpha", 10), hasPendingInteraction: true },
+          { ...thread("alpha-wait", "alpha", 11), indicator: "waiting-for-input" as const },
+          { ...thread("alpha-run", "alpha", 12), indicator: "runtime" as const },
+          { ...thread("beta-run", "beta", 13), indicator: "runtime" as const },
+          { ...thread("gamma-boom", "gamma", 14), indicator: "unread-error" as const },
+          thread("delta-quiet", "delta", 15),
+        ],
+      },
+    });
+
+    const alpha = await slot.findByRole("button", { name: "Start a new chat in Alpha" });
+    expect(alpha.querySelector("[data-attention]")?.textContent).toBe("2 need you");
+    expect(alpha.querySelector("[data-attention]")?.getAttribute("data-attention")).toBe("needsYou");
+    expect(
+      slot.getByRole("button", { name: "Start a new chat in Beta" })
+        .querySelector("[data-attention]")?.textContent,
+    ).toBe("Running");
+    expect(
+      slot.getByRole("button", { name: "Start a new chat in Gamma" })
+        .querySelector("[data-attention]")?.textContent,
+    ).toBe("Failed");
+    expect(
+      slot.getByRole("button", { name: "Start a new chat in Delta" })
+        .querySelector("[data-attention]"),
+    ).toBeNull();
+
+    expect(slot.container.querySelector("[data-group-summary]")).toBeNull();
+    fireEvent.click(slot.getByRole("button", { name: "Collapse Work group" }));
+    expect(slot.container.querySelector("[data-group-summary]")?.textContent).toBe(
+      "2 need you · 2 running",
+    );
+    slot.lifecycle.unmount();
+  });
+
+  it("filters the launcher to projects that need you", async () => {
+    const groups = [
+      { id: "work", name: "Work", projectIds: ["alpha"] },
+      { id: "side", name: "Side", projectIds: ["beta"] },
+    ];
+    const app = await loadPluginApp(() => import("../app"));
+    const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {
+      rpc: {
+        listPinnedProjects: () => ({ projectIds: ["gamma"] }),
+        listProjectGroups: () => ({ groups }),
+        listHiddenProjects: () => ({ projectIds: [] }),
+      },
+      sidebarThreads: {
+        projects: [
+          { id: "alpha", name: "Alpha", isPersonal: false },
+          { id: "beta", name: "Beta", isPersonal: false },
+          { id: "gamma", name: "Gamma", isPersonal: false },
+          { id: "delta", name: "Delta", isPersonal: false },
+        ],
+        threads: [
+          { ...thread("alpha-ask", "alpha", 10), hasPendingInteraction: true },
+          { ...thread("beta-run", "beta", 11), indicator: "runtime" as const },
+          { ...thread("gamma-ask", "gamma", 12), hasPendingInteraction: true },
+        ],
+      },
+    });
+    await waitForPreferences(slot.container);
+
+    const chip = slot.getByRole("button", { name: "Needs you 2" });
+    expect(chip.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(chip);
+
+    expect(chip.getAttribute("aria-pressed")).toBe("true");
+    expect(
+      slot.getAllByRole("button", { name: /Start a new chat/ }).map((button) =>
+        button.getAttribute("aria-label"),
+      ),
+    ).toEqual(["Start a new chat in Gamma", "Start a new chat in Alpha"]);
+    expect(slot.queryByRole("button", { name: /Side group/ })).toBeNull();
+
+    fireEvent.click(chip);
+    expect(slot.getAllByRole("button", { name: /Start a new chat/ })).toHaveLength(4);
+    expect(slot.getByRole("button", { name: "Collapse Side group" })).not.toBeNull();
+    slot.lifecycle.unmount();
+  });
+
+  it("hides the filter chip when nothing needs you", async () => {
+    const app = await loadPluginApp(() => import("../app"));
+    const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {
+      sidebarThreads: {
+        projects: [{ id: "alpha", name: "Alpha", isPersonal: false }],
+        threads: [{ ...thread("alpha-run", "alpha", 10), indicator: "runtime" as const }],
+      },
+    });
+    await waitForPreferences(slot.container);
+    expect(slot.queryByRole("button", { name: /Needs you/ })).toBeNull();
+    slot.lifecycle.unmount();
+  });
+
+  it("shows checkout status on cards and refreshes it on demand", async () => {
+    const app = await loadPluginApp(() => import("../app"));
+    const getProjectWorkspaceStatuses = vi.fn((_input: unknown) => ({
+      statuses: {
+        alpha: {
+          kind: "available" as const,
+          environmentId: "env-alpha",
+          branch: "feature/cards",
+          defaultBranch: "main",
+          changes: { files: 2, insertions: 537, deletions: 119, lineStatsComplete: true },
+          worktrees: 0,
+          fetchedAt: 1,
+        },
+        beta: {
+          kind: "available" as const,
+          environmentId: "env-beta",
+          branch: "main",
+          defaultBranch: "main",
+          changes: { files: 0, insertions: 0, deletions: 0, lineStatsComplete: true },
+          worktrees: 0,
+          fetchedAt: 1,
+        },
+        gamma: { kind: "none" as const, fetchedAt: 1 },
+      },
+    }));
+    const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {
+      rpc: {
+        listPinnedProjects: () => ({ projectIds: [] }),
+        listProjectGroups: () => ({ groups: [] }),
+        listHiddenProjects: () => ({ projectIds: [] }),
+        getProjectWorkspaceStatuses,
+      },
+      sidebarThreads: {
+        projects: [
+          { id: "alpha", name: "Alpha", isPersonal: false },
+          { id: "beta", name: "Beta", isPersonal: false },
+          { id: "gamma", name: "Gamma", isPersonal: false },
+          { id: "personal", name: "Personal", isPersonal: true },
+        ],
+        threads: [thread("gamma-chat", "gamma", 10)],
+      },
+    });
+
+    const alpha = await slot.findByRole("button", { name: "Start a new chat in Alpha" });
+    await waitFor(() => {
+      expect(alpha.querySelector("[data-workspace-changes]")?.textContent).toBe(
+        "2 files+537 -119",
+      );
+    });
+    // The branch is a glyph with the name in its tooltip, not text on the card.
+    const branchMark = alpha.querySelector("[data-workspace-branch]");
+    expect(branchMark?.textContent).toBe("");
+    expect(branchMark?.getAttribute("title")).toBe("feature/cards");
+    expect(branchMark?.getAttribute("aria-label")).toBe("On feature/cards");
+    expect(alpha.querySelector(".text-diff-added")?.textContent).toBe("+537");
+    expect(alpha.querySelector(".text-diff-removed")?.textContent).toBe("-119");
+    // The chat subline stays; the checkout state is its own column.
+    expect(alpha.textContent).toContain("No chats yet");
+    const beta = slot.getByRole("button", { name: "Start a new chat in Beta" });
+    // Two stacked lines, like the dirty state.
+    expect(beta.querySelector("[data-workspace-changes]")?.textContent).toBe("NoChange");
+    expect(beta.querySelector("[data-workspace-branch]")).toBeNull();
+    const gamma = slot.getByRole("button", { name: "Start a new chat in Gamma" });
+    expect(gamma.querySelector("[data-workspace-status]")).toBeNull();
+    expect(gamma.textContent).toContain("1 chat");
+    expect(
+      slot.getByRole("button", { name: "Start a new chat in Personal" })
+        .querySelector("[data-workspace-status]"),
+    ).toBeNull();
+    expect(getProjectWorkspaceStatuses).toHaveBeenCalledTimes(1);
+    expect(getProjectWorkspaceStatuses.mock.calls[0]?.[0]).toEqual({
+      projectIds: ["gamma", "alpha", "beta"],
+      refresh: false,
+    });
+
+    fireEvent.click(slot.getByRole("button", { name: "Refresh checkout status" }));
+    await waitFor(() => {
+      expect(getProjectWorkspaceStatuses).toHaveBeenCalledTimes(2);
+    });
+    expect(getProjectWorkspaceStatuses.mock.calls[1]?.[0]).toEqual({
+      projectIds: ["gamma", "alpha", "beta"],
+      refresh: true,
+    });
+    await waitFor(() => {
+      expect(
+        slot.getByRole("button", { name: "Refresh checkout status" }).getAttribute("title"),
+      ).toBe("Updated just now");
+    });
+    slot.lifecycle.unmount();
+  });
+
+  it("keeps chat counts when checkout status is turned off", async () => {
+    const app = await loadPluginApp(() => import("../app"));
+    const getProjectWorkspaceStatuses = vi.fn(() => ({ statuses: {} }));
+    const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {
+      settings: { showWorkspaceStatus: false },
+      rpc: {
+        listPinnedProjects: () => ({ projectIds: [] }),
+        listProjectGroups: () => ({ groups: [] }),
+        listHiddenProjects: () => ({ projectIds: [] }),
+        getProjectWorkspaceStatuses,
+      },
+      sidebarThreads: {
+        projects: [{ id: "alpha", name: "Alpha", isPersonal: false }],
+        threads: [thread("alpha-chat", "alpha", 10)],
+      },
+    });
+    await waitForPreferences(slot.container);
+    expect(slot.queryByRole("button", { name: "Refresh checkout status" })).toBeNull();
+    expect(getProjectWorkspaceStatuses).not.toHaveBeenCalled();
+    expect(
+      slot.getByRole("button", { name: "Start a new chat in Alpha" }).textContent,
+    ).toContain("1 chat");
+    slot.lifecycle.unmount();
+  });
+
+  it("lists worktrees when hovering a card's checkout status", async () => {
+    const restoreMatches = stubTopLayerSelectors();
+    const app = await loadPluginApp(() => import("../app"));
+    const listProjectWorktrees = vi.fn((_input: unknown) => ({
+      worktrees: [
+        {
+          environmentId: "wt-1",
+          name: null,
+          branch: "bb/dirty-thr_1",
+          status: {
+            kind: "available" as const,
+            environmentId: "wt-1",
+            branch: "bb/dirty-thr_1",
+            defaultBranch: "main",
+            changes: { files: 1, insertions: 3, deletions: 1, lineStatsComplete: true },
+            worktrees: 0,
+            fetchedAt: 1,
+          },
+        },
+        {
+          environmentId: "wt-2",
+          name: null,
+          branch: "bb/gone-thr_2",
+          status: {
+            kind: "unavailable" as const,
+            environmentId: "wt-2",
+            message: "Path is gone",
+            fetchedAt: 1,
+          },
+        },
+      ],
+    }));
+    const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {
+      rpc: {
+        listPinnedProjects: () => ({ projectIds: [] }),
+        listProjectGroups: () => ({ groups: [] }),
+        listHiddenProjects: () => ({ projectIds: [] }),
+        getProjectWorkspaceStatuses: () => ({
+          statuses: {
+            alpha: {
+              kind: "available" as const,
+              environmentId: "env-alpha",
+              branch: "main",
+              defaultBranch: "main",
+              changes: { files: 0, insertions: 0, deletions: 0, lineStatsComplete: true },
+              worktrees: 2,
+              fetchedAt: 1,
+            },
+          },
+        }),
+        listProjectWorktrees,
+      },
+      sidebarThreads: {
+        projects: [{ id: "alpha", name: "Alpha", isPersonal: false }],
+        threads: [],
+      },
+    });
+
+    try {
+      const alpha = await slot.findByRole("button", { name: "Start a new chat in Alpha" });
+      const status = await waitFor(() => {
+        const element = alpha.querySelector("[data-workspace-status]");
+        expect(element).not.toBeNull();
+        return element!;
+      });
+      expect(listProjectWorktrees).not.toHaveBeenCalled();
+      fireEvent.pointerEnter(status);
+
+      // Radix portals the card to document.body, outside the slot container.
+      const card = await waitFor(() => {
+        const element = document.body.querySelector(
+          '[data-bb-plugin="homepage"][data-state="open"]',
+        );
+        expect(element).not.toBeNull();
+        return element!;
+      });
+      expect(listProjectWorktrees).toHaveBeenCalledWith({ projectId: "alpha" });
+      await waitFor(() => {
+        expect(
+          Array.from(card.querySelectorAll("div.flex.items-center")).map((row) => row.textContent),
+        ).toEqual([
+          "Checkout · mainNo change",
+          "bb/dirty-thr_11 file, +3 -1",
+          "bb/gone-thr_2Unavailable",
+        ]);
+      });
+    } finally {
+      slot.lifecycle.unmount();
+      restoreMatches();
+    }
   });
 
   it("renders a declared BB glyph as a masked tile", async () => {
