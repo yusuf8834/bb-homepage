@@ -4,6 +4,10 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
+## 0.2.4 - 2026-09-12
+
+- Open a project's default checkout in an installed app from the right-click
+  Open in menu, including supported remote SSH apps.
 - Keep loaded icons, project groups, and checkout counts visible when returning
   to the new-chat page while fresh data loads. Measure sparklines before paint
   and load card images eagerly to avoid navigation flicker.
