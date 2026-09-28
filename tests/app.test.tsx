@@ -175,7 +175,7 @@ describe("project chat launcher", () => {
       await waitFor(() => {
         expect(second.container.querySelector("[data-homepage-project-glyph]")).toBeNull();
         expect(second.container.querySelector("[data-homepage-project-icon] img")).toBeNull();
-        expect(second.container.querySelector("[data-workspace-changes]")?.textContent).toBe("NoChange");
+        expect(second.container.querySelector("[data-workspace-status]")?.textContent).toBe("");
       });
     }
     second.lifecycle.unmount();
@@ -1443,8 +1443,8 @@ describe("project chat launcher", () => {
     // The chat subline stays; the checkout state is its own column.
     expect(alpha.textContent).toContain("No chats yet");
     const beta = slot.getByRole("button", { name: "Start a new chat in Beta" });
-    // Two stacked lines, like the dirty state.
-    expect(beta.querySelector("[data-workspace-changes]")?.textContent).toBe("NoChange");
+    // Clean checkouts leave the change information empty.
+    expect(beta.querySelector("[data-workspace-status]")?.textContent).toBe("");
     expect(beta.querySelector("[data-workspace-branch]")).toBeNull();
     const gamma = slot.getByRole("button", { name: "Start a new chat in Gamma" });
     expect(gamma.querySelector("[data-workspace-status]")).toBeNull();
@@ -1581,7 +1581,7 @@ describe("project chat launcher", () => {
         expect(
           Array.from(card.querySelectorAll("div.flex.items-center")).map((row) => row.textContent),
         ).toEqual([
-          "Checkout · mainNo change",
+          "Checkout · main",
           "bb/dirty-thr_11 file, +3 -1",
           "bb/gone-thr_2Unavailable",
         ]);

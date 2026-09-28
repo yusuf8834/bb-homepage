@@ -357,9 +357,8 @@ function NewChatSparkline({
     const frame = window.requestAnimationFrame(() => setDrawn(true));
     return () => window.cancelAnimationFrame(frame);
   }, [animate]);
-  // The sparkline fills whatever the card leaves between the name and the
-  // status column, so the viewBox follows the measured width instead of
-  // stretching the drawing.
+  // The sparkline fills the remaining space at the right of the card.
+  // Its viewBox follows the measured width instead of stretching the drawing.
   const frameRef = useRef<HTMLSpanElement>(null);
   const [measuredWidth, setMeasuredWidth] = useState(0);
   useLayoutEffect(() => {
@@ -468,7 +467,7 @@ function GroupAttentionSummary({
 }
 
 function WorkspaceChangesText({ changes }: { changes: WorkspaceChanges }) {
-  if (changes.files === 0) return <>No change</>;
+  if (changes.files === 0) return null;
   return (
     <>
       {formatFileCount(changes.files)},{" "}
@@ -504,20 +503,10 @@ function BranchMark({ branch }: { branch: string | null }) {
   );
 }
 
-/** Right-hand card column: file count over line counts, with a branch mark when off the default. */
+/** Middle card column: file count over line counts, with a branch mark when off the default. */
 function WorkspaceStatusBlock({ status }: { status: AvailableWorkspaceStatus }) {
   const mark = !isOnDefaultBranch(status) ? <BranchMark branch={status.branch} /> : null;
-  if (status.changes.files === 0) {
-    return (
-      <span data-workspace-changes="" className="flex flex-col items-end">
-        <span className="flex items-center gap-1 whitespace-nowrap">
-          {mark}
-          No
-        </span>
-        <span className="whitespace-nowrap">Change</span>
-      </span>
-    );
-  }
+  if (status.changes.files === 0) return mark;
   return (
     <span data-workspace-changes="" className="flex flex-col items-end">
       <span className="flex items-center gap-1 whitespace-nowrap">
@@ -1586,13 +1575,6 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
             </span>
           ) : null}
         </span>
-        {!isEditing ? (
-          <NewChatSparkline
-            projectName={project.name}
-            activity={activity}
-            animate={animateSparklinesRef.current}
-          />
-        ) : null}
         {!isEditing && showWorkspaceStatus && !project.isPersonal ? (
           workspaceLine && workspaceLine.worktrees > 0 ? (
             <WorkspaceHoverCard projectId={project.id} status={workspaceLine}>
@@ -1612,6 +1594,13 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
             // Keep the column so sparklines line up across cards without a checkout.
             <span aria-hidden="true" className={WORKSPACE_COLUMN_CLASSES} />
           )
+        ) : null}
+        {!isEditing ? (
+          <NewChatSparkline
+            projectName={project.name}
+            activity={activity}
+            animate={animateSparklinesRef.current}
+          />
         ) : null}
       </>
     );

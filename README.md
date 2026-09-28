@@ -24,11 +24,12 @@ is intentionally separate from provider plugins.
   **Failed**, or **Running** pill next to its name only when a chat is in that
   state, a **Needs you** filter chip narrows the launcher to those projects,
   and a collapsed group summarizes what is inside it (2 need you · 1 running).
-- Read each project's checkout state in the right-hand column of its card:
-  `No change`, or the changed file count over `+537 -119` line counts, using the
+- Read each project's checkout state in the middle of its card:
+  the changed file count over `+537 -119` line counts, using the
   same numbers as the chat composer's changes bar. A small branch glyph marks
   a checkout that is off its default branch; hover it for the branch name. The
-  sparkline fills the space between the name and this column.
+  sparkline fills the remaining space at the far right. Clean checkouts show no
+  change text.
   Hover the line to list the project's worktrees with their own state. Status
   is read once when the page opens and again from the refresh button; a
   plugin setting can also refresh it every 1, 5, or 15 minutes, and another

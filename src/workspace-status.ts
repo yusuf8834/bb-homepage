@@ -51,7 +51,7 @@ export function formatFileCount(files: number): string {
 }
 
 export function formatChanges(changes: WorkspaceChanges): string {
-  if (changes.files === 0) return "No change";
+  if (changes.files === 0) return "";
   return `${formatFileCount(changes.files)}, +${changes.insertions} -${changes.deletions}`;
 }
 
@@ -59,5 +59,7 @@ export function formatChanges(changes: WorkspaceChanges): string {
 export function describeWorkspaceStatus(status: WorkspaceStatus): string | null {
   if (status.kind !== "available") return null;
   const changes = formatChanges(status.changes);
-  return isOnDefaultBranch(status) ? changes : `${changes} · ${status.branch}`;
+  return [changes, !isOnDefaultBranch(status) ? status.branch : null]
+    .filter(Boolean)
+    .join(" · ") || null;
 }
