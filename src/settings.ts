@@ -31,6 +31,7 @@ export interface HomepageSettings {
   loadProjectIcons: boolean;
   showWorkspaceStatus: boolean;
   workspaceRefresh: WorkspaceRefreshMode;
+  compactCards: boolean;
 }
 
 export type HomepagePluginSettings = Omit<HomepageSettings, "rankingMode">;
@@ -47,6 +48,7 @@ const DEFAULT_HOMEPAGE_SETTINGS: HomepageSettings = {
   loadProjectIcons: true,
   showWorkspaceStatus: true,
   workspaceRefresh: "Manual",
+  compactCards: false,
 };
 
 export function parseHomepageSettings(
@@ -59,6 +61,7 @@ export function parseHomepageSettings(
     loadProjectIcons: booleanSetting(values, "loadProjectIcons"),
     showWorkspaceStatus: booleanSetting(values, "showWorkspaceStatus"),
     workspaceRefresh: parseWorkspaceRefreshMode(values?.workspaceRefresh),
+    compactCards: booleanSetting(values, "compactCards"),
   };
 }
 

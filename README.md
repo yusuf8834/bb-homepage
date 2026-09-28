@@ -34,6 +34,8 @@ is intentionally separate from provider plugins.
   is read once when the page opens and again from the refresh button; a
   plugin setting can also refresh it every 1, 5, or 15 minutes, and another
   turns the checkout line off entirely.
+- Turn on **Compact cards** in plugin settings to drop the sparkline and
+  checkout changes from every card and fit three cards per row on wide screens.
 - Open a project’s default checkout in an installed app from the right-click
   **Open in** menu. Uses BB’s desktop helper, including supported remote SSH apps.
 - Pin projects from the right-click menu, or drag them into the Pinned section

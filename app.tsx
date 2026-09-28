@@ -797,7 +797,12 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
     };
   }, []);
 
-  const showWorkspaceStatus = settings.showWorkspaceStatus;
+  const compactCards = settings.compactCards;
+  // Compact cards have no checkout column, so skip reading checkout status.
+  const showWorkspaceStatus = settings.showWorkspaceStatus && !compactCards;
+  const projectGridClassName = compactCards
+    ? "grid gap-2 sm:grid-cols-2 lg:grid-cols-3"
+    : "grid gap-2 sm:grid-cols-2";
   const [workspaceStatuses, setWorkspaceStatuses] = useState<
     Readonly<Record<string, WorkspaceStatus>>
   >(() => launcherSnapshot?.workspaceStatuses ?? {});
@@ -1595,7 +1600,7 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
             <span aria-hidden="true" className={WORKSPACE_COLUMN_CLASSES} />
           )
         ) : null}
-        {!isEditing ? (
+        {!isEditing && !compactCards ? (
           <NewChatSparkline
             projectName={project.name}
             activity={activity}
@@ -1985,7 +1990,7 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
             ) : null}
           </p>
           {pinnedProjects.length > 0 ? (
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className={projectGridClassName}>
               {pinnedProjects.map(renderProject)}
             </div>
           ) : (
@@ -2189,7 +2194,7 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
             )}
           </div>
           {collapsedGroupIds.includes(group.id) ? null : projectsInGroup.length > 0 ? (
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className={projectGridClassName}>
               {projectsInGroup.map(renderProject)}
             </div>
           ) : (
@@ -2222,7 +2227,7 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
             </p>
           ) : null}
           {ungroupedProjects.length > 0 ? (
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className={projectGridClassName}>
               {ungroupedProjects.map(renderProject)}
             </div>
           ) : (

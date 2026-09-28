@@ -1500,6 +1500,34 @@ describe("project chat launcher", () => {
     slot.lifecycle.unmount();
   });
 
+  it("drops sparklines and checkout changes in three-column compact cards", async () => {
+    const now = Date.now();
+    const app = await loadPluginApp(() => import("../app"));
+    const getProjectWorkspaceStatuses = vi.fn(() => ({ statuses: {} }));
+    const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {
+      settings: { compactCards: true },
+      rpc: {
+        listPinnedProjects: () => ({ projectIds: [] }),
+        listProjectGroups: () => ({ groups: [] }),
+        listHiddenProjects: () => ({ projectIds: [] }),
+        getProjectWorkspaceStatuses,
+      },
+      sidebarThreads: {
+        projects: [{ id: "alpha", name: "Alpha", isPersonal: false }],
+        threads: [thread("alpha-chat", "alpha", now)],
+      },
+    });
+    await waitForPreferences(slot.container);
+    const card = slot.getByRole("button", { name: "Start a new chat in Alpha" });
+    expect(card.textContent).toContain("1 chat");
+    expect(slot.queryByRole("img", { name: /^Alpha:/ })).toBeNull();
+    expect(card.querySelector("[data-workspace-status]")).toBeNull();
+    expect(slot.queryByRole("button", { name: "Refresh checkout status" })).toBeNull();
+    expect(getProjectWorkspaceStatuses).not.toHaveBeenCalled();
+    expect(card.closest(".grid")?.className).toContain("lg:grid-cols-3");
+    slot.lifecycle.unmount();
+  });
+
   it("lists worktrees when hovering a card's checkout status", async () => {
     const restoreMatches = stubTopLayerSelectors();
     const app = await loadPluginApp(() => import("../app"));

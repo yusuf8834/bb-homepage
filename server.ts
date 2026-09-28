@@ -216,6 +216,13 @@ export default function plugin(bb: BbPluginApi) {
       options: [...WORKSPACE_REFRESH_OPTIONS],
       default: "Manual",
     },
+    compactCards: {
+      type: "boolean",
+      label: "Compact cards",
+      description:
+        "Hide activity sparklines and checkout changes, and fit three cards per row on wide screens.",
+      default: false,
+    },
   });
 
   async function listReadyEnvironments(signal: AbortSignal): Promise<WorkspaceEnvironment[]> {
