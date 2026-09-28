@@ -4,6 +4,14 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
+## 0.2.5 - 2026-09-27
+
+- Add a Compact cards setting that drops the sparkline and checkout changes
+  from every card and fits three cards per row on wide screens. Checkout
+  status is not read while it is on.
+- Move the sparkline to the right edge of each card, with checkout changes in
+  the middle. Clean checkouts no longer show "No change" text.
+
 ## 0.2.4 - 2026-09-12
 
 - Open a project's default checkout in an installed app from the right-click
