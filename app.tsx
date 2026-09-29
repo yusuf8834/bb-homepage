@@ -800,9 +800,11 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
   const compactCards = settings.compactCards;
   // Compact cards have no checkout column, so skip reading checkout status.
   const showWorkspaceStatus = settings.showWorkspaceStatus && !compactCards;
-  const projectGridClassName = compactCards
-    ? "grid gap-2 sm:grid-cols-2 lg:grid-cols-3"
-    : "grid gap-2 sm:grid-cols-2";
+  const projectGridClassName = !compactCards
+    ? "grid gap-2 sm:grid-cols-2"
+    : settings.compactColumns === "4 columns"
+      ? "grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+      : "grid gap-2 sm:grid-cols-2 lg:grid-cols-3";
   const [workspaceStatuses, setWorkspaceStatuses] = useState<
     Readonly<Record<string, WorkspaceStatus>>
   >(() => launcherSnapshot?.workspaceStatuses ?? {});

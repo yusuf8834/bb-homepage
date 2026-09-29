@@ -246,6 +246,7 @@ describe("project icon route", () => {
       showWorkspaceStatus: { type: "boolean", default: true },
       workspaceRefresh: { type: "select", default: "Manual" },
       compactCards: { type: "boolean", default: false },
+      compactColumns: { type: "select", default: "3 columns" },
     });
   });
 

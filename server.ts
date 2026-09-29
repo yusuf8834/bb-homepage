@@ -5,7 +5,7 @@ import {
   findProjectArtwork,
   type ProjectArtwork,
 } from "./src/project-icons.js";
-import { WORKSPACE_REFRESH_OPTIONS } from "./src/settings.js";
+import { COMPACT_COLUMN_OPTIONS, WORKSPACE_REFRESH_OPTIONS } from "./src/settings.js";
 import type { WorkspaceStatus, WorkspaceWorktree } from "./src/workspace-status.js";
 import {
   WorkspaceStatusService,
@@ -220,8 +220,15 @@ export default function plugin(bb: BbPluginApi) {
       type: "boolean",
       label: "Compact cards",
       description:
-        "Hide activity sparklines and checkout changes, and fit three cards per row on wide screens.",
+        "Hide activity sparklines and checkout changes, and fit more cards per row on wide screens.",
       default: false,
+    },
+    compactColumns: {
+      type: "select",
+      label: "Compact card columns",
+      description: "Cards per row on wide screens while Compact cards is on.",
+      options: [...COMPACT_COLUMN_OPTIONS],
+      default: "3 columns",
     },
   });
 

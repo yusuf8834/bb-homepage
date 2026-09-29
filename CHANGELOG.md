@@ -4,6 +4,9 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
+- Add a Compact card columns setting to fit three or four compact cards per
+  row on wide screens.
+
 ## 0.2.5 - 2026-09-27
 
 - Add a Compact cards setting that drops the sparkline and checkout changes

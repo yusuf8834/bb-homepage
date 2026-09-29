@@ -1528,6 +1528,26 @@ describe("project chat launcher", () => {
     slot.lifecycle.unmount();
   });
 
+  it("fits four compact cards per row on extra-wide screens when chosen", async () => {
+    const app = await loadPluginApp(() => import("../app"));
+    const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {
+      settings: { compactCards: true, compactColumns: "4 columns" },
+      rpc: {
+        listPinnedProjects: () => ({ projectIds: [] }),
+        listProjectGroups: () => ({ groups: [] }),
+        listHiddenProjects: () => ({ projectIds: [] }),
+      },
+      sidebarThreads: {
+        projects: [{ id: "alpha", name: "Alpha", isPersonal: false }],
+        threads: [thread("alpha-chat", "alpha", Date.now())],
+      },
+    });
+    await waitForPreferences(slot.container);
+    const card = slot.getByRole("button", { name: "Start a new chat in Alpha" });
+    expect(card.closest(".grid")?.className).toContain("xl:grid-cols-4");
+    slot.lifecycle.unmount();
+  });
+
   it("lists worktrees when hovering a card's checkout status", async () => {
     const restoreMatches = stubTopLayerSelectors();
     const app = await loadPluginApp(() => import("../app"));

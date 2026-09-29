@@ -16,6 +16,10 @@ export const WORKSPACE_REFRESH_OPTIONS = [
 
 export type WorkspaceRefreshMode = (typeof WORKSPACE_REFRESH_OPTIONS)[number];
 
+export const COMPACT_COLUMN_OPTIONS = ["3 columns", "4 columns"] as const;
+
+export type CompactColumns = (typeof COMPACT_COLUMN_OPTIONS)[number];
+
 const WORKSPACE_REFRESH_INTERVALS: Record<WorkspaceRefreshMode, number | null> = {
   Manual: null,
   "Every minute": 60_000,
@@ -32,6 +36,7 @@ export interface HomepageSettings {
   showWorkspaceStatus: boolean;
   workspaceRefresh: WorkspaceRefreshMode;
   compactCards: boolean;
+  compactColumns: CompactColumns;
 }
 
 export type HomepagePluginSettings = Omit<HomepageSettings, "rankingMode">;
@@ -49,6 +54,7 @@ const DEFAULT_HOMEPAGE_SETTINGS: HomepageSettings = {
   showWorkspaceStatus: true,
   workspaceRefresh: "Manual",
   compactCards: false,
+  compactColumns: "3 columns",
 };
 
 export function parseHomepageSettings(
@@ -62,6 +68,7 @@ export function parseHomepageSettings(
     showWorkspaceStatus: booleanSetting(values, "showWorkspaceStatus"),
     workspaceRefresh: parseWorkspaceRefreshMode(values?.workspaceRefresh),
     compactCards: booleanSetting(values, "compactCards"),
+    compactColumns: parseCompactColumns(values?.compactColumns),
   };
 }
 
@@ -76,6 +83,13 @@ export function parseWorkspaceRefreshMode(value: unknown): WorkspaceRefreshMode 
   return (
     WORKSPACE_REFRESH_OPTIONS.find((option) => option === value) ??
     DEFAULT_HOMEPAGE_SETTINGS.workspaceRefresh
+  );
+}
+
+export function parseCompactColumns(value: unknown): CompactColumns {
+  return (
+    COMPACT_COLUMN_OPTIONS.find((option) => option === value) ??
+    DEFAULT_HOMEPAGE_SETTINGS.compactColumns
   );
 }
 

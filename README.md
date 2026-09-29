@@ -36,6 +36,8 @@ is intentionally separate from provider plugins.
   turns the checkout line off entirely.
 - Turn on **Compact cards** in plugin settings to drop the sparkline and
   checkout changes from every card and fit three cards per row on wide screens.
+  Set **Compact card columns** to 4 columns to fit four per row on extra-wide
+  screens.
 - Open a project’s default checkout in an installed app from the right-click
   **Open in** menu. Uses BB’s desktop helper, including supported remote SSH apps.
 - Pin projects from the right-click menu, or drag them into the Pinned section
