@@ -4,8 +4,11 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
+## 0.2.6 - 2026-09-29
+
 - Add a Compact card columns setting to fit three or four compact cards per
   row on wide screens.
+- Shorten the README and list every plugin setting in one place.
 
 ## 0.2.5 - 2026-09-27
 
