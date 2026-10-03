@@ -4,6 +4,14 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
+## 0.2.7 - 2026-10-03
+
+- Show colored letter tiles matching BB Sidebar when project artwork is missing,
+  loading, or fails to load. Support light and dark themes and skip common
+  project-name prefixes when choosing the letter.
+- Wrap status pills below project names on narrow cards so the Running tag
+  no longer squeezes the name.
+
 ## 0.2.6 - 2026-09-29
 
 - Add a Compact card columns setting to fit three or four compact cards per
