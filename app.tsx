@@ -27,6 +27,8 @@ import {
   type ProjectAttention,
 } from "./src/attention.js";
 import { ProjectOpenMenu } from "./src/ProjectOpenMenu.js";
+import { projectMonogramColor, projectMonogramLetter } from "./src/project-monogram.js";
+import "./src/project-monogram.css";
 import { formatRelativeTime } from "./src/relative-time.js";
 import type { ProjectGroup, rpcContract } from "./server.js";
 import {
@@ -226,11 +228,13 @@ function GlyphIcon({ svg }: { svg: string }) {
 
 function ProjectIcon({
   projectId,
+  name,
   isPersonal,
   loadArtwork,
   onRename,
 }: {
   projectId: string;
+  name: string;
   isPersonal: boolean;
   loadArtwork: boolean;
   onRename?: () => void;
@@ -271,13 +275,17 @@ function ProjectIcon({
   }, [isPersonal, loadArtwork, projectId, rpc]);
 
   const useTile = artwork.kind !== "image";
+  const useMonogram = !isPersonal && (artwork.kind === "fallback" || artwork.kind === "loading");
 
   return (
     <span
       aria-hidden="true"
       data-homepage-project-icon=""
+      data-letter={useMonogram ? projectMonogramLetter(name) : undefined}
       className={`flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-md ${
-        useTile
+        useMonogram
+          ? `bb-homepage-monogram bb-homepage-monogram-${projectMonogramColor(name)} text-sm font-semibold leading-none`
+          : useTile
           ? "bg-muted text-muted-foreground group-hover:text-foreground"
           : "bg-transparent"
       }`}
@@ -305,9 +313,9 @@ function ProjectIcon({
         />
       ) : artwork.kind === "glyph" ? (
         <GlyphIcon svg={artwork.svg} />
-      ) : (
+      ) : !useMonogram ? (
         <FolderIcon />
-      )}
+      ) : null}
     </span>
   );
 }
@@ -1527,6 +1535,7 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
       <>
         <ProjectIcon
           projectId={project.id}
+          name={project.name}
           isPersonal={project.isPersonal}
           loadArtwork={settings.loadProjectIcons}
           onRename={
@@ -1563,8 +1572,8 @@ function ProjectChatLauncher({ projectId }: PluginHomepageSectionProps) {
               onBlur={cancelRenaming}
             />
           ) : (
-            <span className="flex min-w-0 items-center gap-1.5 overflow-hidden">
-              <span className="truncate text-sm font-medium text-foreground">
+            <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+              <span className="max-w-full truncate text-sm font-medium text-foreground">
                 {project.name}
               </span>
               <AttentionPill attention={attention} />

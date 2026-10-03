@@ -24,7 +24,8 @@ card to start a new chat in that project.
   or hides it.
 - **Project artwork** comes from `bb.branding.icon` in `package.json` or common
   files such as `icon.png`, `favicon.ico`, and `logo.svg`. Other projects get a
-  folder icon. The icon endpoint only serves images up to 2 MB and rejects SVGs
+  colored letter tile, matching BB Sidebar. Personal keeps its folder icon.
+  The icon endpoint only serves images up to 2 MB and rejects SVGs
   with scripts or external references.
 
 The plugin also hides BB's built-in recent-chats section on the new-thread page.

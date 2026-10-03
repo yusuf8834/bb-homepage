@@ -1,0 +1,84 @@
+/* Follow BB's theme classes, independently of the operating system theme. */
+:root,
+.light {
+  --bb-homepage-monogram-0-bg: var(--color-emerald-100, #d1fae5);
+  --bb-homepage-monogram-0-fg: var(--color-emerald-700, #047857);
+  --bb-homepage-monogram-1-bg: var(--color-teal-100, #ccfbf1);
+  --bb-homepage-monogram-1-fg: var(--color-teal-700, #0f766e);
+  --bb-homepage-monogram-2-bg: var(--color-sky-100, #e0f2fe);
+  --bb-homepage-monogram-2-fg: var(--color-sky-700, #0369a1);
+  --bb-homepage-monogram-3-bg: var(--color-indigo-100, #e0e7ff);
+  --bb-homepage-monogram-3-fg: var(--color-indigo-700, #4338ca);
+  --bb-homepage-monogram-4-bg: var(--color-violet-100, #ede9fe);
+  --bb-homepage-monogram-4-fg: var(--color-violet-700, #6d28d9);
+  --bb-homepage-monogram-5-bg: var(--color-pink-100, #fce7f3);
+  --bb-homepage-monogram-5-fg: var(--color-pink-700, #be185d);
+  --bb-homepage-monogram-6-bg: var(--color-amber-100, #fef3c7);
+  --bb-homepage-monogram-6-fg: var(--color-amber-700, #b45309);
+  --bb-homepage-monogram-7-bg: var(--color-red-100, #fee2e2);
+  --bb-homepage-monogram-7-fg: var(--color-red-700, #b91c1c);
+}
+
+.dark {
+  --bb-homepage-monogram-0-bg: color-mix(in oklab, var(--color-emerald-950, #022c22) 80%, transparent);
+  --bb-homepage-monogram-0-fg: var(--color-emerald-300, #6ee7b7);
+  --bb-homepage-monogram-1-bg: color-mix(in oklab, var(--color-teal-950, #042f2e) 80%, transparent);
+  --bb-homepage-monogram-1-fg: var(--color-teal-300, #5eead4);
+  --bb-homepage-monogram-2-bg: color-mix(in oklab, var(--color-sky-950, #082f49) 80%, transparent);
+  --bb-homepage-monogram-2-fg: var(--color-sky-300, #7dd3fc);
+  --bb-homepage-monogram-3-bg: color-mix(in oklab, var(--color-indigo-950, #1e1b4b) 80%, transparent);
+  --bb-homepage-monogram-3-fg: var(--color-indigo-300, #a5b4fc);
+  --bb-homepage-monogram-4-bg: color-mix(in oklab, var(--color-violet-950, #2e1065) 80%, transparent);
+  --bb-homepage-monogram-4-fg: var(--color-violet-300, #c4b5fd);
+  --bb-homepage-monogram-5-bg: color-mix(in oklab, var(--color-pink-950, #500724) 80%, transparent);
+  --bb-homepage-monogram-5-fg: var(--color-pink-300, #f9a8d4);
+  --bb-homepage-monogram-6-bg: color-mix(in oklab, var(--color-amber-950, #451a03) 80%, transparent);
+  --bb-homepage-monogram-6-fg: var(--color-amber-300, #fcd34d);
+  --bb-homepage-monogram-7-bg: color-mix(in oklab, var(--color-red-950, #450a0a) 80%, transparent);
+  --bb-homepage-monogram-7-fg: var(--color-red-300, #fca5a5);
+}
+
+/* Keep decorative letters out of copied text and find-in-page. */
+.bb-homepage-monogram::before {
+  content: attr(data-letter);
+}
+
+.bb-homepage-monogram-0 {
+  background-color: var(--bb-homepage-monogram-0-bg);
+  color: var(--bb-homepage-monogram-0-fg);
+}
+
+.bb-homepage-monogram-1 {
+  background-color: var(--bb-homepage-monogram-1-bg);
+  color: var(--bb-homepage-monogram-1-fg);
+}
+
+.bb-homepage-monogram-2 {
+  background-color: var(--bb-homepage-monogram-2-bg);
+  color: var(--bb-homepage-monogram-2-fg);
+}
+
+.bb-homepage-monogram-3 {
+  background-color: var(--bb-homepage-monogram-3-bg);
+  color: var(--bb-homepage-monogram-3-fg);
+}
+
+.bb-homepage-monogram-4 {
+  background-color: var(--bb-homepage-monogram-4-bg);
+  color: var(--bb-homepage-monogram-4-fg);
+}
+
+.bb-homepage-monogram-5 {
+  background-color: var(--bb-homepage-monogram-5-bg);
+  color: var(--bb-homepage-monogram-5-fg);
+}
+
+.bb-homepage-monogram-6 {
+  background-color: var(--bb-homepage-monogram-6-bg);
+  color: var(--bb-homepage-monogram-6-fg);
+}
+
+.bb-homepage-monogram-7 {
+  background-color: var(--bb-homepage-monogram-7-bg);
+  color: var(--bb-homepage-monogram-7-fg);
+}

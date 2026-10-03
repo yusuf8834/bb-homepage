@@ -991,11 +991,10 @@ describe("project chat launcher", () => {
       "One",
     ]);
     expect(slot.container.querySelectorAll("img")).toHaveLength(0);
-    expect(slot.container.querySelectorAll('svg[viewBox="0 0 24 24"]')).toHaveLength(2);
     expect(
-      Array.from(slot.container.querySelectorAll("[data-homepage-project-icon]"))
-        .every((icon) => icon.className.includes("bg-muted")),
-    ).toBe(true);
+      Array.from(slot.container.querySelectorAll(".bb-homepage-monogram"))
+        .map((icon) => icon.getAttribute("data-letter")),
+    ).toEqual(["T", "O"]);
     slot.lifecycle.unmount();
   });
 
@@ -1246,7 +1245,7 @@ describe("project chat launcher", () => {
     slot.lifecycle.unmount();
   });
 
-  it("uses folder fallbacks for personal projects and failed images", async () => {
+  it("keeps Personal's folder and uses a letter tile for failed project images", async () => {
     const app = await loadPluginApp(() => import("../app"));
     const slot = renderSlot(app.homepageSections[0]!, { projectId: null }, {
       rpc: {
@@ -1269,7 +1268,11 @@ describe("project chat launcher", () => {
     expect(images[0]?.getAttribute("src")).toContain("projectId=work");
     fireEvent.error(images[0]!);
     expect(slot.container.querySelectorAll("img")).toHaveLength(0);
-    expect(slot.container.querySelectorAll('svg[viewBox="0 0 24 24"]')).toHaveLength(2);
+    expect(slot.container.querySelectorAll('svg[viewBox="0 0 24 24"]')).toHaveLength(1);
+    const monogram = slot.container.querySelector(".bb-homepage-monogram");
+    expect(monogram?.getAttribute("data-letter")).toBe("W");
+    expect(monogram?.getAttribute("aria-hidden")).toBe("true");
+    expect(monogram?.textContent).toBe("");
 
     slot.lifecycle.unmount();
   });
