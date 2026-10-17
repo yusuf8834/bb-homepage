@@ -61,3 +61,8 @@ bb plugin install path:$PWD
 ```
 
 After changing an installed local copy, run `bb plugin reload homepage`.
+
+## Contributing
+
+Contributor lists are for people only. Do not list AI tools, models, or agents
+as contributors or add `Co-authored-by` commit trailers crediting them.
